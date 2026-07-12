@@ -125,6 +125,30 @@ The simulator uses these per-cell scores instead of flat land-type densities, ma
 - 86,469 ditches mapped (mean 3.78 km/cell) — heavily drained landscape
 - 27 cells classified as damaged peatland — prime restoration candidates
 
+## Carbon conversion to real units (tCO2/ha/year)
+
+The module `src/estonia_landuse/simulator/carbon_tonnes.py` converts proxy scores
+to estimated tonnes CO2 per hectare per year, with confidence intervals (low/mid/high).
+
+Key feature: **peat-aware coefficients** — cells with higher `peat_overlap_pct` use
+drained-peatland emission factors, which are much larger than mineral soil values.
+
+### Sources for emission/sequestration rates
+
+| Rate | Value range | Source |
+|------|-------------|--------|
+| Drained peat cropland emission | 20–35 tCO2/ha/yr | [IPCC 2014 Wetlands Supplement](https://www.ipcc.ch/publication/2013-supplement-to-the-2006-ipcc-guidelines-for-national-greenhouse-gas-inventories-wetlands/) (~29 default) |
+| Peat rewetting benefit | 15–30 tCO2/ha/yr avoided | [ERR/METK 2024](https://news.err.ee/1609382576/clashing-interests-in-the-way-of-reducing-co2-emissions-in-agriculture) (~23 tCO2/ha) |
+| Estonian drained peatland total emission | 2–8 Mt CO2e/yr from ~30,000 ha | [ERR 2022](https://news.err.ee/1608756928/reducing-co2-emissions-from-land-restoring-wetlands-or-drainage-systems) |
+| Estonian peatland GHG synthesis | 419–676 ktCO2e/yr (drained) | [Mander et al. 2010, Wetlands](https://link.springer.com/article/10.1672/08-206.1) |
+| Forest sequestration (hemiboreal) | 2–6 tCO2/ha/yr | [EEA Estonia LULUCF](https://www.eea.europa.eu/en/europe-environment-2025/countries/estonia/lulucf-emissions) |
+| Afforestation on cropland | 4–15 tCO2/ha/yr | [ResearchGate/IPCC](https://www.researchgate.net/figure/Carbon-sequestration-rate-tons-CO2-ha-year-of-species-planted-across-boreal_fig4_329074041) (boreal/temperate range) |
+| Improved drained peat EF | Supports reduction from IPCC default | [Nature 2023](https://www.nature.com/articles/s43247-023-01091-y) |
+| Hemiboreal cropland CO2 flux | First direct measurements | [Copernicus 2025](https://bg.copernicus.org/articles/22/4241/2025/index.html) |
+
+**Disclaimer:** These are order-of-magnitude estimates. Actual values require site-specific
+assessment. Use for communication and scenario comparison, not carbon accounting.
+
 ## Tech stack
 
 Python 3.10+ with uv. Core: GeoPandas, rasterio, PyTorch, NumPy, Pandas, OWSLib.
