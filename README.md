@@ -40,11 +40,34 @@ uv run jupyter lab
 
 # Run notebooks in order:
 # 01    — Collect datasets (builds V1 feature table)
-# 01.1  — Validate features on map
-# 04    — Build carbon V1.5 dataset (soil, hydrology, biomass)
+# 01.2  — Fetch Rohemeeter biodiversity scores
+# 01.3  — Validate features on map
 # 02    — Simulator and baselines
 # 03    — Neuroevolution (NSGA-II training)
+# 03.1  — Neuroevolution with carbon v1.5
+# 03.2  — Neuroevolution with Rohemeeter biodiversity
 ```
+
+## Interactive visualizer
+
+A standalone HTML/JS app for exploring land-use scenarios without running Python.
+
+```bash
+# Generate the grid GeoJSON (one-time, after processing data)
+uv run python visualizer/export_geojson.py
+
+# Serve locally (browsers block fetch on file://)
+python -m http.server 8000 -d visualizer
+
+# Open http://localhost:8000
+```
+
+Features:
+- **Action map:** cells colored by assigned action, updates live with sliders
+- **Biodiversity map:** Rohemeeter scores (RdYlGn colormap)
+- **Metric cards:** CO₂ sequestration, cost, biodiversity, area, cost efficiency — all with confidence intervals
+- **Preset scenarios:** Balanced, Max Forest, Restore Wetland, Protect Only
+- **Click any cell** for popup with detailed properties
 
 ## Project structure
 
