@@ -40,11 +40,56 @@
         .slider-item label {
             display: flex;
             justify-content: space-between;
+            align-items: center;
             font-size: 0.8rem;
             font-weight: 500;
             margin-bottom: 0.2rem;
         }
         .slider-item label span { color: #2d7d46; font-weight: 700; }
+        .info-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 15px; height: 15px;
+            border-radius: 50%;
+            background: #e2e8f0;
+            color: #4a5568;
+            font-size: 0.6rem;
+            font-weight: 700;
+            cursor: help;
+            position: relative;
+            margin-left: 0.3rem;
+            flex-shrink: 0;
+        }
+        .info-btn:hover .info-tooltip {
+            display: block;
+        }
+        .info-tooltip {
+            display: none;
+            position: absolute;
+            bottom: 22px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1a365d;
+            color: white;
+            padding: 0.5rem 0.7rem;
+            border-radius: 6px;
+            font-size: 0.72rem;
+            font-weight: 400;
+            width: 220px;
+            line-height: 1.4;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        .info-tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 5px solid transparent;
+            border-top-color: #1a365d;
+        }
         .slider-item input[type="range"] {
             width: 100%; height: 5px;
             -webkit-appearance: none;
@@ -123,19 +168,27 @@
             </div>
             <div class="slider-group">
                 <div class="slider-item">
-                    <label>Afforestation <span id="val-afforest">30%</span></label>
+                    <label>Afforestation
+                        <div class="info-btn">?<div class="info-tooltip">Share of changed area that gets afforested (planted with trees). Broadly feasible on most agricultural/degraded land.</div></div>
+                        <span id="val-afforest">30%</span></label>
                     <input type="range" id="sl-afforest" min="0" max="100" value="30">
                 </div>
                 <div class="slider-item">
-                    <label>Wetland restoration <span id="val-wetland">15%</span></label>
+                    <label>Wetland restoration
+                        <div class="info-btn">?<div class="info-tooltip">Share of changed area converted to wetland. Only effective where wetland suitability is high (near water, flat terrain, etc.).</div></div>
+                        <span id="val-wetland">15%</span></label>
                     <input type="range" id="sl-wetland" min="0" max="100" value="15">
                 </div>
                 <div class="slider-item">
-                    <label>Area changed <span id="val-area">25%</span></label>
+                    <label>Area changed
+                        <div class="info-btn">?<div class="info-tooltip">Total percentage of the county's land that gets some intervention. Unchanged cells benefit from the "protection bonus" for biodiversity.</div></div>
+                        <span id="val-area">25%</span></label>
                     <input type="range" id="sl-area" min="5" max="60" value="25">
                 </div>
                 <div class="slider-item">
-                    <label>Peat share <span id="val-peat">35%</span></label>
+                    <label>Peat share
+                        <div class="info-btn">?<div class="info-tooltip">What fraction of wetland restoration targets peat soils vs mineral soils. Peat rewetting avoids 15–30 tCO₂/ha/yr (vs 1–5 on mineral). Lääne has ~35% peat coverage.</div></div>
+                        <span id="val-peat">35%</span></label>
                     <input type="range" id="sl-peat" min="0" max="80" value="35">
                 </div>
             </div>
