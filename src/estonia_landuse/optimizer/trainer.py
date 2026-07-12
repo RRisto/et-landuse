@@ -58,8 +58,9 @@ def train(
     else:
         population = [Prescriptor(in_size, hidden_size) for _ in range(pop_size)]
     
-    # Evaluate initial population
+    # Evaluate initial population and assign ranks/crowding
     _evaluate_population(population, features_norm, context, config)
+    population = _select(population, pop_size)
     
     for gen in range(n_generations):
         # Create offspring
@@ -117,9 +118,12 @@ def _create_offspring(population, n_offspring, p_mutation, mutation_factor):
 
 
 def _tournament_select(population, k=3):
-    """Tournament selection: pick k random, return best rank."""
+    """Tournament selection: pick k random, prefer lower rank, then higher crowding."""
     candidates = np.random.choice(len(population), size=min(k, len(population)), replace=False)
-    best = min(candidates, key=lambda i: (population[i].rank or 999))
+    best = min(candidates, key=lambda i: (
+        population[i].rank if population[i].rank is not None else 999,
+        -(getattr(population[i], "crowding", 0) or 0),
+    ))
     return population[best]
 
 
@@ -130,18 +134,18 @@ def _select(combined, pop_size):
     
     next_gen = []
     for rank, front in enumerate(fronts):
+        # Compute crowding distance for ALL fronts
+        distances = crowding_distance(metrics_list, front)
         for idx in front:
             combined[idx].rank = rank
+            combined[idx].crowding = distances[idx]
         
         if len(next_gen) + len(front) <= pop_size:
             next_gen.extend([combined[idx] for idx in front])
         else:
-            distances = crowding_distance(metrics_list, front)
             sorted_front = sorted(front, key=lambda i: -distances[i])
             remaining = pop_size - len(next_gen)
-            for idx in sorted_front[:remaining]:
-                combined[idx].crowding = distances[idx]
-                next_gen.append(combined[idx])
+            next_gen.extend([combined[idx] for idx in sorted_front[:remaining]])
             break
     
     return next_gen
