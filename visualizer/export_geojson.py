@@ -9,6 +9,8 @@ sys.path.insert(0, "src")
 import geopandas as gpd
 import pandas as pd
 import numpy as np
+import json
+import urllib.request
 from pathlib import Path
 
 from estonia_landuse.data.constants import DATA_PROCESSED, PROJECT_ROOT
@@ -17,7 +19,11 @@ from estonia_landuse.simulator.config import default_config
 from estonia_landuse.simulator.features import derive_features
 
 OUT_PATH = Path(__file__).parent / "grid.geojson"
+MUNICIPALITIES_PATH = Path(__file__).parent / "municipalities.geojson"
 CARBON_DIR = PROJECT_ROOT / "data" / "processed" / "carbon_v1_5"
+
+# GADM level 2 = municipalities for Estonia
+GADM_URL = "https://geodata.ucdavis.edu/gadm/gadm4.1/json/gadm41_EST_2.json"
 
 
 def main():
@@ -76,6 +82,41 @@ def main():
 
     size_mb = OUT_PATH.stat().st_size / 1e6
     print(f"Done: {size_mb:.1f} MB")
+
+    # --- Export municipalities ---
+    export_municipalities()
+
+
+def export_municipalities():
+    """Download and export municipality boundaries (GADM level 2)."""
+    if MUNICIPALITIES_PATH.exists():
+        size = MUNICIPALITIES_PATH.stat().st_size / 1e6
+        print(f"Municipalities already exist ({size:.1f} MB), skipping download.")
+        return
+
+    print(f"Downloading municipalities from GADM...")
+    try:
+        with urllib.request.urlopen(GADM_URL) as resp:
+            data = json.loads(resp.read())
+    except Exception as e:
+        print(f"  Failed to download: {e}")
+        return
+
+    # Filter to Lääne county area (simplify and keep only name + geometry)
+    gdf = gpd.GeoDataFrame.from_features(data["features"])
+    gdf = gdf.set_crs("EPSG:4326")
+
+    # Keep only relevant columns
+    name_col = "NAME_2" if "NAME_2" in gdf.columns else gdf.columns[1]
+    gdf_simple = gdf[[name_col, "geometry"]].copy()
+    gdf_simple = gdf_simple.rename(columns={name_col: "name"})
+
+    # Simplify for smaller file
+    gdf_simple["geometry"] = gdf_simple["geometry"].simplify(0.002, preserve_topology=True)
+
+    gdf_simple.to_file(MUNICIPALITIES_PATH, driver="GeoJSON")
+    size = MUNICIPALITIES_PATH.stat().st_size / 1e6
+    print(f"Municipalities exported: {size:.1f} MB ({len(gdf_simple)} features)")
 
 
 if __name__ == "__main__":

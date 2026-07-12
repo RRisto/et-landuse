@@ -42,6 +42,7 @@ const ACTION_COLORS = {
 
 // --- State ---
 let geojsonData = null;
+let municipalitiesData = null;
 let mapAction = null;
 let mapBio = null;
 let actionLayer = null;
@@ -264,18 +265,53 @@ function initMaps() {
   L.tileLayer(tiles, { attribution: attr, maxZoom: 15 }).addTo(mapBio);
 }
 
+function addMunicipalityBorders(map) {
+  if (!municipalitiesData) return;
+  L.geoJSON(municipalitiesData, {
+    style: {
+      fillColor: 'transparent',
+      fillOpacity: 0,
+      weight: 1.8,
+      color: '#1a365d',
+      opacity: 0.6,
+      dashArray: '4 3',
+    },
+    onEachFeature: (feature, layer) => {
+      const name = feature.properties.name || '';
+      if (name) {
+        layer.bindTooltip(name, {
+          permanent: false,
+          direction: 'center',
+          className: 'municipality-label',
+        });
+      }
+    },
+  }).addTo(map);
+}
+
 // --- Load data and start ---
 async function init() {
   initMaps();
   renderMetrics();
 
   try {
-    const resp = await fetch('grid.geojson');
-    geojsonData = await resp.json();
+    const [gridResp, munResp] = await Promise.all([
+      fetch('grid.geojson'),
+      fetch('municipalities.geojson').catch(() => null),
+    ]);
+
+    geojsonData = await gridResp.json();
+
+    if (munResp && munResp.ok) {
+      municipalitiesData = await munResp.json();
+      addMunicipalityBorders(mapAction);
+      addMunicipalityBorders(mapBio);
+    }
+
     updateActionMap();
     initBioMap();
   } catch (e) {
-    console.error('Failed to load grid.geojson:', e);
+    console.error('Failed to load data:', e);
     document.getElementById('map-action').innerHTML =
       '<p style="padding:2rem;color:#c53030">Failed to load grid.geojson. Run: uv run python visualizer/export_geojson.py</p>';
   }
