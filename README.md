@@ -149,6 +149,22 @@ drained-peatland emission factors, which are much larger than mineral soil value
 **Disclaimer:** These are order-of-magnitude estimates. Actual values require site-specific
 assessment. Use for communication and scenario comparison, not carbon accounting.
 
+## Cost estimation (EUR)
+
+The module `src/estonia_landuse/simulator/cost_eur.py` estimates implementation cost
+and opportunity cost (lost income) in EUR, with confidence intervals.
+
+### Sources for cost estimates
+
+| Parameter | Value range | Source |
+|-----------|-------------|--------|
+| Afforestation (planting + maintenance) | €1,500–4,000/ha | [Arbonics/AgFunder 2025](https://agfundernews.com/planting-more-forests-comes-with-high-upfront-costs-many-landowners-cant-afford-report) |
+| Peatland rewetting | €2,000–15,000/ha | [ERR 2024: €40M+ spent](https://news.err.ee/1609248588/estonia-planning-to-restore-25-000-hectares-of-marshland-by-2050); [€68M meadows plan](https://news.err.ee/1609570045/68-million-meadows-restoration-plan-added-to-updated-climate-act) |
+| Agricultural land rent (opportunity cost) | €100–300/ha/yr | [ERR 2026: ~€150/ha/yr](https://news.err.ee/1610026633/agricultural-land-prices-fall-in-estonia-amid-lack-of-large-deals); [Eurostat EU avg €295](https://ec.europa.eu/eurostat/statistics-explained/index.php?title=Agricultural_land_prices_and_rents_-_statistics) |
+| Agricultural land price | €6,122/ha avg (Estonia 2025) | [ERR 2026](https://news.err.ee/1610026633/agricultural-land-prices-fall-in-estonia-amid-lack-of-large-deals) |
+
+Costs include a configurable time horizon (default 20 years) for opportunity cost annualization.
+
 ## Tech stack
 
 Python 3.10+ with uv. Core: GeoPandas, rasterio, PyTorch, NumPy, Pandas, OWSLib.
