@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Estonia Land-Use Scenarios — Interactive Explorer</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -15,159 +16,104 @@
         .header {
             background: linear-gradient(135deg, #1a365d, #2d7d46);
             color: white;
-            padding: 2rem;
+            padding: 1.5rem 2rem;
             text-align: center;
         }
-        .header h1 { font-size: 1.8rem; margin-bottom: 0.5rem; }
-        .header p { opacity: 0.85; font-size: 0.95rem; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        .header h1 { font-size: 1.6rem; margin-bottom: 0.3rem; }
+        .header p { opacity: 0.85; font-size: 0.9rem; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 1.5rem; }
         .controls {
             background: white;
             border-radius: 12px;
             padding: 1.5rem;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
             box-shadow: 0 2px 8px rgba(0,0,0,0.08);
         }
-        .controls h2 { font-size: 1.1rem; margin-bottom: 1rem; color: #1a365d; }
+        .controls h2 { font-size: 1rem; margin-bottom: 0.8rem; color: #1a365d; }
         .slider-group {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1.5rem;
+            grid-template-columns: 1fr 1fr 1fr 1fr;
+            gap: 1.2rem;
         }
-        @media (max-width: 768px) { .slider-group { grid-template-columns: 1fr; } }
-        .slider-item { }
+        @media (max-width: 900px) { .slider-group { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 500px) { .slider-group { grid-template-columns: 1fr; } }
         .slider-item label {
             display: flex;
             justify-content: space-between;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             font-weight: 500;
-            margin-bottom: 0.3rem;
+            margin-bottom: 0.2rem;
         }
-        .slider-item label span { color: #667; font-weight: 600; }
+        .slider-item label span { color: #2d7d46; font-weight: 700; }
         .slider-item input[type="range"] {
-            width: 100%;
-            height: 6px;
+            width: 100%; height: 5px;
             -webkit-appearance: none;
-            background: #e2e8f0;
-            border-radius: 3px;
-            outline: none;
+            background: #e2e8f0; border-radius: 3px; outline: none;
         }
         .slider-item input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 18px; height: 18px;
-            border-radius: 50%;
-            background: #2d7d46;
-            cursor: pointer;
+            width: 16px; height: 16px; border-radius: 50%;
+            background: #2d7d46; cursor: pointer;
         }
         .results {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
         }
         .card {
-            background: white;
-            border-radius: 12px;
-            padding: 1.5rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            background: white; border-radius: 10px; padding: 1rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08); text-align: center;
         }
-        .card h3 {
-            font-size: 0.85rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: #667;
-            margin-bottom: 0.5rem;
-        }
-        .card .value {
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 0.3rem;
-        }
-        .card .ci {
-            font-size: 0.8rem;
-            color: #999;
-        }
-        .card .unit { font-size: 0.9rem; color: #667; }
+        .card h3 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: #888; margin-bottom: 0.3rem; }
+        .card .value { font-size: 1.5rem; font-weight: 700; }
+        .card .ci { font-size: 0.7rem; color: #aaa; }
         .positive { color: #2d7d46; }
         .negative { color: #c53030; }
         .neutral { color: #4a5568; }
-        .bar-chart {
-            background: white;
-            border-radius: 12px;
-            padding: 1.5rem;
+        .map-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        @media (max-width: 900px) { .map-section { grid-template-columns: 1fr; } }
+        .map-container {
+            background: white; border-radius: 12px; overflow: hidden;
             box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            margin-bottom: 2rem;
         }
-        .bar-chart h3 { font-size: 1rem; margin-bottom: 1rem; color: #1a365d; }
-        .bar {
-            display: flex;
-            align-items: center;
-            margin-bottom: 0.8rem;
+        .map-container h3 {
+            padding: 0.8rem 1rem 0; font-size: 0.9rem; color: #1a365d;
         }
-        .bar-label {
-            width: 120px;
-            font-size: 0.8rem;
-            font-weight: 500;
-        }
-        .bar-track {
-            flex: 1;
-            height: 24px;
-            background: #e2e8f0;
-            border-radius: 4px;
-            overflow: hidden;
-            position: relative;
-        }
-        .bar-fill {
-            height: 100%;
-            border-radius: 4px;
-            transition: width 0.3s ease;
-        }
-        .bar-value {
-            width: 60px;
-            text-align: right;
-            font-size: 0.8rem;
-            font-weight: 600;
-            margin-left: 0.5rem;
-        }
-        .disclaimer {
-            background: #fffbeb;
-            border: 1px solid #f6e05e;
-            border-radius: 8px;
-            padding: 1rem;
-            font-size: 0.82rem;
-            color: #744210;
-        }
-        .scenario-tabs {
-            display: flex;
-            gap: 0.5rem;
-            margin-bottom: 1rem;
-        }
+        .map { height: 400px; }
+        .scenario-tabs { display: flex; gap: 0.4rem; margin-bottom: 1rem; flex-wrap: wrap; }
         .scenario-tab {
-            padding: 0.5rem 1rem;
-            border-radius: 6px;
-            border: 2px solid #e2e8f0;
-            background: white;
-            cursor: pointer;
-            font-size: 0.85rem;
-            font-weight: 500;
-            transition: all 0.2s;
+            padding: 0.4rem 0.8rem; border-radius: 6px;
+            border: 2px solid #e2e8f0; background: white;
+            cursor: pointer; font-size: 0.8rem; font-weight: 500; transition: all 0.2s;
         }
-        .scenario-tab.active {
-            border-color: #2d7d46;
-            background: #f0fff4;
-            color: #2d7d46;
-        }
+        .scenario-tab.active { border-color: #2d7d46; background: #f0fff4; color: #2d7d46; }
         .scenario-tab:hover { border-color: #2d7d46; }
+        .legend {
+            display: flex; gap: 1rem; flex-wrap: wrap; padding: 0.6rem 1rem;
+            font-size: 0.75rem; border-top: 1px solid #eee;
+        }
+        .legend-item { display: flex; align-items: center; gap: 0.3rem; }
+        .legend-swatch { width: 14px; height: 14px; border-radius: 3px; }
+        .disclaimer {
+            background: #fffbeb; border: 1px solid #f6e05e; border-radius: 8px;
+            padding: 0.8rem; font-size: 0.75rem; color: #744210;
+        }
+        .loading { text-align: center; padding: 3rem; color: #888; }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>🌿 Estonia Land-Use Scenario Explorer</h1>
-        <p>Explore trade-offs between biodiversity, carbon, and cost for Lääne County</p>
+        <p>Explore trade-offs between biodiversity, carbon, and cost for Lääne County (2,806 km²)</p>
     </div>
     <div class="container">
         <div class="controls">
-            <h2>Policy Parameters</h2>
             <div class="scenario-tabs">
                 <div class="scenario-tab active" data-scenario="balanced">Balanced</div>
                 <div class="scenario-tab" data-scenario="max-forest">Max Forest</div>
@@ -177,43 +123,61 @@
             </div>
             <div class="slider-group">
                 <div class="slider-item">
-                    <label>Afforestation intensity <span id="val-afforest">30%</span></label>
+                    <label>Afforestation <span id="val-afforest">30%</span></label>
                     <input type="range" id="sl-afforest" min="0" max="100" value="30">
                 </div>
                 <div class="slider-item">
-                    <label>Wetland restoration intensity <span id="val-wetland">15%</span></label>
+                    <label>Wetland restoration <span id="val-wetland">15%</span></label>
                     <input type="range" id="sl-wetland" min="0" max="100" value="15">
                 </div>
                 <div class="slider-item">
-                    <label>Area changed (% of county) <span id="val-area">25%</span></label>
+                    <label>Area changed <span id="val-area">25%</span></label>
                     <input type="range" id="sl-area" min="5" max="60" value="25">
                 </div>
                 <div class="slider-item">
-                    <label>Peat soil share in changes <span id="val-peat">35%</span></label>
+                    <label>Peat share <span id="val-peat">35%</span></label>
                     <input type="range" id="sl-peat" min="0" max="80" value="35">
                 </div>
             </div>
         </div>
 
-        <div class="results" id="results"></div>
+        <div class="results" id="results">
+            <div class="loading">Calculating...</div>
+        </div>
 
-        <div class="bar-chart">
-            <h3>Land-Use Change Breakdown</h3>
-            <div id="bars"></div>
+        <div class="map-section">
+            <div class="map-container">
+                <h3>Assigned Action</h3>
+                <div id="map-action" class="map"></div>
+                <div class="legend">
+                    <div class="legend-item"><div class="legend-swatch" style="background:#2d7d46"></div> Afforest</div>
+                    <div class="legend-item"><div class="legend-swatch" style="background:#1f78b4"></div> Restore wetland</div>
+                    <div class="legend-item"><div class="legend-swatch" style="background:#b2df8a"></div> Grassland</div>
+                    <div class="legend-item"><div class="legend-swatch" style="background:#ddd"></div> No change</div>
+                    <div class="legend-item"><div class="legend-swatch" style="background:#888"></div> Constrained</div>
+                </div>
+            </div>
+            <div class="map-container">
+                <h3>Rohemeeter Biodiversity</h3>
+                <div id="map-bio" class="map"></div>
+                <div class="legend">
+                    <div class="legend-item"><div class="legend-swatch" style="background:#d73027"></div> Low (0)</div>
+                    <div class="legend-item"><div class="legend-swatch" style="background:#fee08b"></div> Mid (50)</div>
+                    <div class="legend-item"><div class="legend-swatch" style="background:#1a9850"></div> High (100)</div>
+                </div>
+            </div>
         </div>
 
         <div class="disclaimer">
-            <strong>⚠️ Research sandbox disclaimer:</strong> All values are proxy estimates based on
-            IPCC defaults, Estonian NIR data, and METK analyses. Actual outcomes depend on
-            site-specific conditions. Not suitable for carbon accounting or official planning.
-            <br><br>
-            <strong>Sources:</strong>
+            <strong>⚠️ Research sandbox:</strong> All values are proxy estimates. Not suitable for official planning.
+            Sources:
             <a href="https://news.err.ee/1609382576/clashing-interests-in-the-way-of-reducing-co2-emissions-in-agriculture">METK 2024</a> |
-            <a href="https://www.eea.europa.eu/en/europe-environment-2025/countries/estonia/lulucf-emissions">EEA LULUCF</a> |
-            <a href="https://agfundernews.com/planting-more-forests-comes-with-high-upfront-costs-many-landowners-cant-afford-report">Arbonics 2025</a> |
-            <a href="https://news.err.ee/1609248588/estonia-planning-to-restore-25-000-hectares-of-marshland-by-2050">ERR Peatland Plan</a>
+            <a href="https://www.eea.europa.eu/en/europe-environment-2025/countries/estonia/lulucf-emissions">EEA</a> |
+            <a href="https://agfundernews.com/planting-more-forests-comes-with-high-upfront-costs-many-landowners-cant-afford-report">Arbonics</a> |
+            <a href="https://news.err.ee/1609248588/estonia-planning-to-restore-25-000-hectares-of-marshland-by-2050">ERR Peatland</a>
         </div>
     </div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
