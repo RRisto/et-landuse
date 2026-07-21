@@ -123,6 +123,46 @@ def fetch_protected_areas_wfs(bbox: tuple, layer: str = "eelis:kr_kaitseala") ->
     return gdf
 
 
+# All EELIS protection layers relevant for land-use planning
+# Names verified against live WFS at gsavalik.envir.ee
+PROTECTED_AREA_LAYERS = [
+    "eelis:kr_kaitseala",          # Nature reserves (kaitsealad)
+    "eelis:kr_hoiuala",            # Conservation areas (Natura 2000 habitat)
+   # "eelis:kr_kohalik_objekt",     # Local protected objects
+  #  "eelis:kr_kohalik_objekt_pv",  # Local protected objects (buffer zones)
+]
+
+
+def fetch_all_protected_areas_wfs(bbox: tuple) -> gpd.GeoDataFrame:
+    """Fetch all types of protected areas from EELIS WFS and merge.
+
+    Fetches multiple layers (reserves, Natura 2000, local objects) and
+    returns a unified GeoDataFrame with a 'protection_type' column.
+    Returns individual polygons (not dissolved) for distance calculations.
+
+    bbox: (minx, miny, maxx, maxy) in EPSG:3301
+    """
+    all_gdfs = []
+
+    for layer in PROTECTED_AREA_LAYERS:
+        try:
+            gdf = fetch_protected_areas_wfs(bbox, layer=layer)
+            gdf["protection_type"] = layer.split(":")[-1]
+            all_gdfs.append(gdf[["geometry", "protection_type"]])
+            print(f"  {layer}: {len(gdf)} polygons")
+        except Exception as e:
+            print(f"  {layer}: FAILED ({e})")
+
+    if not all_gdfs:
+        return gpd.GeoDataFrame(columns=["geometry", "protection_type"],
+                                geometry="geometry", crs=CRS_ESTONIAN)
+
+    combined = pd.concat(all_gdfs, ignore_index=True)
+    combined = gpd.GeoDataFrame(combined, geometry="geometry", crs=CRS_ESTONIAN)
+    print(f"  Total: {len(combined)} polygons from {len(all_gdfs)} layers")
+    return combined
+
+
 def add_land_cover_group(gdf: gpd.GeoDataFrame, clc_col: str = "CODE_18") -> gpd.GeoDataFrame:
     """Add land_cover_group, naturalness_score, carbon_score from CORINE class."""
     df = gdf.copy()

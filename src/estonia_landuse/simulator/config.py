@@ -4,6 +4,12 @@
 def default_config() -> dict:
     """Return the default simulator config. Copy and modify to experiment."""
     return {
+        # --- Carbon model selection ---
+        # "auto" = use v1.5 if columns present, else flat
+        # "flat" = always use flat density lookup
+        # "nir" = use NIR-calibrated model (Estonian emission factors)
+        "carbon_model": "auto",
+
         # --- Constraint thresholds (used in feature derivation) ---
         "constraints": {
             "urban_pct_blocks_all": 0.5,
@@ -11,8 +17,8 @@ def default_config() -> dict:
             "population_norm_blocks_restore": 0.7,
             "wetland_suit_min_for_restore": 0.15,
             "forest_pct_blocks_afforest": 0.8,
-            "protected_pct_blocks_change": 0.8,
-            "protected_pct_blocks_afforest": 0.5,
+            "protected_pct_blocks_change": 0.15,
+            "protected_pct_blocks_afforest": 0.15,
         },
 
         # --- Feature derivation weights ---
@@ -64,6 +70,9 @@ def default_config() -> dict:
         },
 
         # --- Budget & penalties ---
-        "max_changed_pct": 0.25,
-        "budget_penalty_weight": 2.0,
+        "max_changed_pct": 0.20,
+        "budget_penalty_weight": 10.0,
+        # Food security: max 15% total agriculture loss county-wide
+        "max_total_agri_loss_pct": 0.15,
+        "total_agri_loss_penalty_weight": 20.0,
     }

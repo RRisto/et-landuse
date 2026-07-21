@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from .actions import LAND_USE_GROUPS, CHANGEABLE_GROUPS, FIXED_GROUPS
+from .carbon_nir import score_carbon_nir
 from .config import default_config
 
 
@@ -58,54 +59,77 @@ def score_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     # Divide by 2 because each unit moved appears as +1 and -1
     
     # --- Carbon gain ---
-    # V1.5: use per-cell action-specific carbon scores if available
-    carbon_v15 = config.get("carbon_v1_5", {})
-    use_v15 = carbon_v15.get("enabled", False)
-    blend = carbon_v15.get("blend", 1.0)
-    score_cols = carbon_v15.get("score_columns", {})
+    # Select carbon model based on config
+    carbon_model = config.get("carbon_model", "auto")
+    # "auto" = use v1.5 if columns present, else flat
+    # "flat" = always use flat density lookup
+    # "nir" = use NIR-calibrated model (Estonian emission factors)
+    # "learned" = use trained GBR for forest + NIR for non-forest transitions
 
-    has_v15_cols = (
-        use_v15
-        and score_cols.get("carbon_stock") in context.columns
-        and score_cols.get("afforest") in context.columns
-    )
-
-    # Old flat model: transition TO higher-carbon types = positive gain
-    carbon_density = np.array(sc.get("carbon_density", [0.8, 1.0, 0.3, 0.4]))
-    # [forest, wetland, agriculture, grassland]
-    carbon_gain_flat = (delta * carbon_density[None, :]).sum(axis=1)
-
-    if has_v15_cols and blend > 0:
-        # V1.5 model: carbon gain is weighted by per-cell action potentials
-        # Forest increase weighted by afforestation potential
-        afforest_score = context[score_cols["afforest"]].fillna(0).values
-        # Wetland increase weighted by wetland restoration potential
-        restore_score = context[score_cols["restore_wetland"]].fillna(0).values
-        # Protection benefit for preserving existing carbon stock
-        carbon_stock = context[score_cols["carbon_stock"]].fillna(0).values
-
-        forest_gain_v15 = np.clip(delta[:, 0], 0, None) * afforest_score
-        wetland_gain_v15 = np.clip(delta[:, 1], 0, None) * restore_score
-        # Preservation bonus: NOT changing high-carbon cells
-        preserve_bonus = (1.0 - change_pct) * carbon_stock * 0.1
-        # Loss penalty: reducing forest/wetland in high-stock cells
-        forest_loss_v15 = np.clip(-delta[:, 0], 0, None) * carbon_stock * 0.8
-        wetland_loss_v15 = np.clip(-delta[:, 1], 0, None) * carbon_stock * 1.0
-
-        carbon_gain_v15 = (
-            forest_gain_v15 + wetland_gain_v15 + preserve_bonus
-            - forest_loss_v15 - wetland_loss_v15
-        )
-        # Blend old and new
-        carbon_gain = (1.0 - blend) * carbon_gain_flat + blend * carbon_gain_v15
+    if carbon_model == "nir":
+        # NIR-calibrated: uses Estonian NIR emission factors by transition type
+        carbon_gain = score_carbon_nir(context, target_fractions)
+    elif carbon_model == "learned":
+        # Learned model: GBR for forest sequestration + NIR for other transitions
+        from .carbon_learned import score_carbon_learned
+        carbon_gain = score_carbon_learned(context, target_fractions, config)
     else:
-        carbon_gain = carbon_gain_flat
+        # V1.5 or flat model (existing logic)
+        carbon_v15 = config.get("carbon_v1_5", {})
+        use_v15 = carbon_v15.get("enabled", False) and carbon_model != "flat"
+        blend = carbon_v15.get("blend", 1.0)
+        score_cols = carbon_v15.get("score_columns", {})
+
+        has_v15_cols = (
+            use_v15
+            and score_cols.get("carbon_stock") in context.columns
+            and score_cols.get("afforest") in context.columns
+        )
+
+        # Old flat model: transition TO higher-carbon types = positive gain
+        carbon_density = np.array(sc.get("carbon_density", [0.8, 1.0, 0.3, 0.4]))
+        # [forest, wetland, agriculture, grassland]
+        carbon_gain_flat = (delta * carbon_density[None, :]).sum(axis=1)
+
+        if has_v15_cols and blend > 0:
+            # V1.5 model: carbon gain is weighted by per-cell action potentials
+            # Forest increase weighted by afforestation potential
+            afforest_score = context[score_cols["afforest"]].fillna(0).values
+            # Wetland increase weighted by wetland restoration potential
+            restore_score = context[score_cols["restore_wetland"]].fillna(0).values
+            # Protection benefit for preserving existing carbon stock
+            carbon_stock = context[score_cols["carbon_stock"]].fillna(0).values
+
+            forest_gain_v15 = np.clip(delta[:, 0], 0, None) * afforest_score
+            wetland_gain_v15 = np.clip(delta[:, 1], 0, None) * restore_score
+            # Preservation bonus: NOT changing high-carbon cells
+            preserve_bonus = (1.0 - change_pct) * carbon_stock * 0.1
+            # Loss penalty: reducing forest/wetland in high-stock cells
+            forest_loss_v15 = np.clip(-delta[:, 0], 0, None) * carbon_stock * 0.8
+            wetland_loss_v15 = np.clip(-delta[:, 1], 0, None) * carbon_stock * 1.0
+
+            carbon_gain_v15 = (
+                forest_gain_v15 + wetland_gain_v15 + preserve_bonus
+                - forest_loss_v15 - wetland_loss_v15
+            )
+            # Blend old and new
+            carbon_gain = (1.0 - blend) * carbon_gain_flat + blend * carbon_gain_v15
+        else:
+            carbon_gain = carbon_gain_flat
     
     # --- Biodiversity gain ---
     # Increasing natural/semi-natural land at expense of agriculture = positive
     biodiversity_value = np.array(sc.get("biodiversity_value", [0.7, 0.9, 0.2, 0.6]))
     biodiversity_gain = (delta * biodiversity_value[None, :]).sum(axis=1)
     
+    # Gate wetland biodiversity reward by suitability (same as 03.2)
+    # Only give biodiversity credit for wetland gain where physically feasible
+    wetland_suit = context["wetland_suitability"].values
+    wetland_gain_raw = np.clip(delta[:, 1], 0, None)
+    # Remove ungated wetland reward, add gated version
+    biodiversity_gain -= wetland_gain_raw * biodiversity_value[1]
+    biodiversity_gain += wetland_gain_raw * biodiversity_value[1] * wetland_suit
+
     # Bonus for increasing land near protected areas
     protected = context["protected_overlap_pct"].values
     biodiversity_gain += sc.get("connectivity_bonus", 0.2) * change_pct * protected
@@ -133,16 +157,14 @@ def score_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     
     # Protected areas: NO change allowed (hard constraint)
     protected = context["protected_overlap_pct"].values
-    protected_threshold = config.get("constraints", {}).get("protected_pct_blocks_change", 0.8)
+    protected_threshold = config.get("constraints", {}).get("protected_pct_blocks_change", 0.3)
     is_protected = protected > protected_threshold
-    # Zero out all gains in protected cells and apply heavy penalty
+    # Zero out ALL scores for protected cells — no benefit from changing them
     biodiversity_gain[is_protected] = 0.0
     carbon_gain[is_protected] = 0.0
-    penalty[is_protected] += change_pct[is_protected] * 50.0
-    
-    # Also penalize moderate protection (>50% overlap) — less severe
-    is_partly_protected = (protected > 0.5) & ~is_protected
-    penalty[is_partly_protected] += change_pct[is_partly_protected] * 10.0
+    change_pct[is_protected] = 0.0  # don't count toward budget
+    # Massive penalty proportional to how much change is attempted
+    penalty[is_protected] += np.abs(delta[is_protected]).sum(axis=1) * 100.0
     
     # Penalize converting wetland to forest (ecologically wrong)
     wetland_loss = np.clip(-delta[:, 1], 0, None)
@@ -193,9 +215,27 @@ def summarize_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     changed_pct = outcomes["change_pct"].mean()
     
     # Budget penalty
-    max_changed = config.get("max_changed_pct", 0.25)
-    budget_weight = config.get("budget_penalty_weight", 2.0)
+    max_changed = config.get("max_changed_pct", 0.20)
+    budget_weight = config.get("budget_penalty_weight", 10.0)
     budget_penalty = max(0.0, changed_pct - max_changed) * budget_weight
+    
+    # Food security: penalize total agriculture loss across the county
+    # Can't reduce total agriculture area by more than max_total_agri_loss_pct
+    max_total_agri_loss = config.get("max_total_agri_loss_pct", 0.20)
+    current_agri_total = context["agriculture_pct"].values.sum()
+    if current_agri_total > 0:
+        # Compute target agriculture fractions
+        urban = context["urban_pct"].values
+        water = context["water_pct"].values
+        available_land = np.clip(1.0 - urban - water, 0, 1)
+        target_sum = target_fractions.sum(axis=1, keepdims=True)
+        target_sum = np.where(target_sum > 0, target_sum, 1.0)
+        targets = target_fractions / target_sum * available_land[:, None]
+        target_agri_total = targets[:, 2].sum()  # agriculture is index 2
+        agri_loss_frac = (current_agri_total - target_agri_total) / current_agri_total
+        excess_agri_loss = max(0.0, agri_loss_frac - max_total_agri_loss)
+        agri_penalty_weight = config.get("total_agri_loss_penalty_weight", 20.0)
+        budget_penalty += excess_agri_loss * agri_penalty_weight
     
     return {
         "biodiversity_gain": outcomes["biodiversity_gain"].mean(),

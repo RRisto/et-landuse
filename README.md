@@ -46,6 +46,12 @@ uv run jupyter lab
 # 03    — Neuroevolution (NSGA-II training)
 # 03.1  — Neuroevolution with carbon v1.5
 # 03.2  — Neuroevolution with Rohemeeter biodiversity
+# 04    — UNFCCC data download + NIR model comparison
+# 05    — Evolution comparison: flat vs NIR carbon
+# 06    — Download forest registry compartment geometries
+# 07    — Fetch detailed forest attributes (parallel)
+# 08    — Train GBR carbon predictor from real data
+# 09    — Spatial join + full model comparison + maps
 ```
 
 ## Interactive visualizer
@@ -77,13 +83,23 @@ Features:
 │   ├── 01.1_validate_features_map.ipynb # Visual validation of all features
 │   ├── 02_simulator_and_baselines.ipynb # Test simulator + baseline policies
 │   ├── 03_neuroevolution.ipynb          # NSGA-II evolution
-│   └── 04_carbon_dataset.ipynb          # Carbon V1.5 pipeline
+│   ├── 04_learned_carbon_predictor.ipynb # UNFCCC data + NIR vs flat comparison
+│   ├── 05_compare_carbon_models.ipynb   # Evolution: flat vs NIR Pareto fronts
+│   ├── 06_download_forest_registry.ipynb # Download WFS compartment geometries
+│   ├── 07_fetch_forest_details.ipynb    # Fetch detailed attributes (parallel)
+│   ├── 08_train_carbon_predictor.ipynb  # Train GBR from real forest data
+│   └── 09_spatial_join_and_model.ipynb  # Full pipeline: join + evolve + compare
 ├── src/
 │   ├── estonia_landuse/                 # Main package
 │   │   ├── data/                        # Loading, constants
 │   │   ├── simulator/                   # Scoring, constraints, config
+│   │   │   ├── carbon_tonnes.py         # Lookup-based carbon (V1.5)
+│   │   │   ├── carbon_nir.py           # NIR-calibrated carbon model
+│   │   │   ├── cost_eur.py             # Cost estimation in EUR with CI
+│   │   │   ├── simulator.py            # Main scorer (supports model switching)
+│   │   │   └── config.py               # Config with carbon_model selector
 │   │   └── optimizer/                   # NSGA-II, prescriptors, seeds
-│   └── carbon_dataset/                  # Carbon V1.5 pipeline scripts
+│   └── carbon_dataset/                  # Carbon V1.5 + forest registry pipeline
 │       ├── config.py                    # Lookup tables, weights, paths
 │       ├── 01_prepare_grid.py
 │       ├── 02_process_corine.py         # Full CORINE raster processing
@@ -92,7 +108,9 @@ Features:
 │       ├── 04_process_soil_peat.py      # Estonian WFS: peat + wetlands
 │       ├── 05_process_hydrology.py      # ETAK WFS: streams, ditches
 │       ├── 06_derive_scores.py          # Combined carbon model
-│       └── 07_export_dataset.py         # Merge + export
+│       ├── 07_export_dataset.py         # Merge + export
+│       ├── forest_registry_wfs.py       # WFS download for metsaregister
+│       └── forest_registry_details.py   # Parallel REST API detail fetcher
 ├── data/
 │   ├── raw/                             # Downloaded source data (not committed)
 │   └── processed/
@@ -114,6 +132,8 @@ Features:
 | Maa-amet maardlad WFS | Peat deposits | Auto (WFS) |
 | ETAK WFS | Wetlands, streams, ditches, waterbodies | Auto (WFS) |
 | ESA CCI Biomass v7 | Above-ground biomass | Manual download |
+| Forest Registry (metsaregister) | Compartment boundaries + forestry data | Auto (WFS + REST API) |
+| UNFCCC (via unfccc_di_api) | Estonia LULUCF emission factors | Auto (Zenodo snapshot) |
 
 ### ESA CCI Biomass download
 
@@ -140,6 +160,94 @@ carbon_stock_score = 0.45 * forest_aboveground_carbon + 0.40 * soil_carbon_relev
 ```
 
 The simulator uses these per-cell scores instead of flat land-type densities, making carbon gain spatially informed.
+
+## Carbon model (NIR-calibrated)
+
+An alternative carbon scoring model that uses emission factors from Estonia's National Inventory Report (NIR) instead of proxy lookups.
+
+### How it differs from V1.5
+
+| Aspect | V1.5 (proxy) | NIR-calibrated |
+|--------|-------------|----------------|
+| Carbon per transition | Flat density lookup `[0.8, 1.0, 0.3, 0.4]` | Per-transition pair × soil type |
+| Source→destination awareness | Only destination matters | Full from→to pair tracked |
+| Peat sensitivity | Via `peat_overlap_pct` blending | Same, but with NIR-specific factors |
+| Wetland gating | Via constraints only | Carbon credit also gated by `wetland_suitability` |
+| Data source | Literature estimates | Estonian NIR 2024 + IPCC tables |
+
+### Key transition factors (tCO2/ha/yr, mid estimate)
+
+| Transition | Mineral soil | Peat soil |
+|-----------|-------------|-----------|
+| Cropland → Forest | +8.7 | +0.5 |
+| Grassland → Forest | +6.3 | +1.0 |
+| Cropland → Wetland | +2.5 | +23.0 |
+| Forest → Cropland | -8.0 | -34.0 |
+| Wetland → Cropland | -2.0 | -26.0 |
+
+Sources: [IPCC GPG Table 3A.1.9](https://www.fao.org/4/j2132s/J2132S16.htm), [EEA LULUCF Emission Factors](https://www.eea.europa.eu/en/ghg-knowledge-hub/lulucf/data-tools/emission-factors-viewer), Estonia NIR Ch. 6.
+
+### Usage
+
+Set `carbon_model` in the simulator config:
+```python
+config = default_config()
+config["carbon_model"] = "nir"  # or "flat" for the old model
+```
+
+Module: `src/estonia_landuse/simulator/carbon_nir.py`
+
+## Forest Registry integration (Learned predictor)
+
+Uses real compartment-level data from the Estonian Forest Registry (metsaregister) to train a GBR predictor for forest carbon sequestration.
+
+### Data pipeline
+
+1. **Download geometries** via public WFS at `gsavalik.envir.ee/geoserver/mr_portaal/wfs` (CC-BY 4.0)
+2. **Fetch detailed attributes** via REST API at `register.metsad.ee/portaal/api/rest/eraldis/detail/{id}`
+3. **Spatial join** compartment features to the 1km grid (area-weighted)
+4. **Train GBR** to predict tCO2/ha/yr from (species, age, site class, drainage, height)
+
+### Conversion formula
+
+```
+tCO2/ha/yr = juurdekasv × wood_density × carbon_fraction × CO2/C × BEF
+```
+
+| Parameter | Value | Source |
+|-----------|-------|--------|
+| Wood density | Species-specific (0.35–0.58 t/m³) | [IPCC GPG Table 3A.1.9](https://www.fao.org/4/j2132s/J2132S16.htm) |
+| Carbon fraction | 0.50 | IPCC 2006 Vol 4, Ch 4; Uri et al. 2017, 2019 |
+| CO2/C ratio | 3.667 | Molecular weight (fixed) |
+| BEF | 1.30 | [IPCC GPG Table 3A.1.10](https://www.fao.org/3/j2132s/J2132S18.htm) |
+
+### Key features per grid cell (from spatial join)
+
+| Feature | Source |
+|---------|--------|
+| `mean_age` | Area-weighted mean forest age |
+| `mean_increment` | Area-weighted juurdekasv (m³/ha/yr) |
+| `mean_height` | Area-weighted dominant height |
+| `mean_volume` | Area-weighted volume (m³/ha) |
+| `pct_drained` | Fraction of compartments with `kuivendatud=true` |
+| `dominant_species` | Most common species by area |
+
+### Notebooks
+
+```
+06_download_forest_registry.ipynb     # Download compartment geometries via WFS
+07_fetch_forest_details.ipynb         # Fetch detailed attributes (parallel, configurable)
+08_train_carbon_predictor.ipynb       # Train GBR, compare with NIR flat values
+09_spatial_join_and_model.ipynb       # Join to grid + run evolution comparison
+```
+
+### Cross-evaluation findings
+
+The NIR model dominates the flat model in cross-evaluation:
+- Flat-evolved policies score ~0 carbon under NIR evaluation
+- NIR-evolved policies score well under both models
+- NIR model finds strategies that also improve biodiversity (avoids ecologically damaging transitions)
+- NIR model's Pareto front is shorter but represents achievable gains
 
 ## Key findings (Lääne county)
 

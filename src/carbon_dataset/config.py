@@ -132,3 +132,29 @@ CARBON_STOCK_WEIGHTS_NO_SOIL = {
 AGB_TO_CARBON_FACTOR = 0.47
 # Carbon (Mg C/ha) -> CO2e (Mg CO2e/ha)
 CARBON_TO_CO2E_FACTOR = 44.0 / 12.0
+
+# --- Forest volume → CO2 conversion (for juurdekasv data) ---
+# Source: IPCC Good Practice Guidance for LULUCF, Table 3A.1.9
+# https://www.fao.org/4/j2132s/J2132S16.htm
+WOOD_DENSITY = {
+    "MA": 0.42,   # Pinus sylvestris (Scots pine)
+    "KU": 0.40,   # Picea abies (Norway spruce)
+    "KS": 0.51,   # Betula spp. (Birch)
+    "HB": 0.35,   # Populus tremula (Aspen)
+    "LM": 0.45,   # Alnus glutinosa (Black alder)
+    "LV": 0.45,   # Alnus incana (Grey alder)
+    "SA": 0.57,   # Fraxinus excelsior (Ash)
+    "TA": 0.58,   # Quercus robur (Oak)
+}
+
+# Carbon fraction of dry biomass (IPCC 2006 Vol 4, Ch 4, Table 4.3)
+CARBON_FRACTION = 0.50
+
+# CO2 per C — molecular weight ratio (44/12)
+CO2_PER_C = 44.0 / 12.0  # = 3.667
+
+# Biomass Expansion Factor: stem → whole tree (branches, roots, foliage)
+# Source: IPCC GPG-LULUCF Table 3A.1.10
+# https://www.fao.org/3/j2132s/J2132S18.htm
+# Range: 1.15 (mature >200 m³/ha) to 3.0 (young <20 m³/ha); 1.30 = mixed-age average
+BEF = 1.30
