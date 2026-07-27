@@ -13,7 +13,12 @@ class Prescriptor:
     Weights are flat numpy arrays — easy to mutate and crossover.
     """
 
-    def __init__(self, in_size: int, hidden_size: int = 16):
+    def __init__(
+        self,
+        in_size: int,
+        hidden_size: int = 16,
+        rng: np.random.Generator | None = None,
+    ):
         self.in_size = in_size
         self.hidden_size = hidden_size
         self.out_size = N_OUTPUTS
@@ -31,7 +36,8 @@ class Prescriptor:
         )
         
         # Initialize random weights
-        self.params = np.random.randn(self.n_params).astype(np.float32) * 0.1
+        rng = np.random.default_rng() if rng is None else rng
+        self.params = rng.standard_normal(self.n_params).astype(np.float32) * 0.1
         
         # Fitness metrics (set by trainer)
         self.metrics = None
@@ -75,6 +81,17 @@ class Prescriptor:
 
     def copy(self) -> "Prescriptor":
         """Create a copy with same weights."""
-        clone = Prescriptor(self.in_size, self.hidden_size)
+        clone = object.__new__(Prescriptor)
+        clone.in_size = self.in_size
+        clone.hidden_size = self.hidden_size
+        clone.out_size = self.out_size
+        clone.w1_shape = self.w1_shape
+        clone.b1_shape = self.b1_shape
+        clone.w2_shape = self.w2_shape
+        clone.b2_shape = self.b2_shape
+        clone.n_params = self.n_params
         clone.params = self.params.copy()
+        clone.metrics = None
+        clone.rank = None
+        clone.constraint_violation = None
         return clone

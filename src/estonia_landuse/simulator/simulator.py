@@ -7,9 +7,21 @@ The simulator computes outcomes based on the transition from current to target.
 import numpy as np
 import pandas as pd
 
-from .actions import LAND_USE_GROUPS, CHANGEABLE_GROUPS, FIXED_GROUPS
+from ..validation import validate_context_columns, validate_target_fractions
 from .carbon_nir import score_carbon_nir
 from .config import default_config
+
+REQUIRED_CONTEXT_COLUMNS = [
+    "forest_pct",
+    "wetland_pct",
+    "agriculture_pct",
+    "grassland_pct",
+    "urban_pct",
+    "water_pct",
+    "wetland_suitability",
+    "protected_overlap_pct",
+    "opportunity_cost_proxy",
+]
 
 
 def score_policy(context: pd.DataFrame, target_fractions: np.ndarray,
@@ -29,7 +41,10 @@ def score_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     """
     if config is None:
         config = default_config()
-    
+
+    validate_context_columns(context, REQUIRED_CONTEXT_COLUMNS)
+    target_fractions = validate_target_fractions(context, target_fractions)
+
     n = len(context)
     sc = config.get("scoring", {})
     

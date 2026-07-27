@@ -16,6 +16,7 @@ def create_seed_prescriptors(
     n_epochs: int = 200,
     lr: float = 0.01,
     hidden_size: int = 16,
+    rng: np.random.Generator | None = None,
 ) -> list[Prescriptor]:
     """Create seed prescriptors trained to imitate simple strategies.
     
@@ -26,6 +27,7 @@ def create_seed_prescriptors(
     4. Balanced — slight increase in forest + wetland at expense of agriculture
     """
     in_size = features_norm.shape[1]
+    rng = np.random.default_rng() if rng is None else rng
     
     # Get current fractions [forest, wetland, agriculture, grassland]
     current = np.column_stack([
@@ -42,7 +44,7 @@ def create_seed_prescriptors(
     seeds = []
     
     # Seed 1: No change (output = current distribution)
-    seeds.append(_train_seed(features_norm, current_norm, in_size, hidden_size, n_epochs, lr))
+    seeds.append(_train_seed(features_norm, current_norm, in_size, hidden_size, n_epochs, lr, rng))
     
     # Seed 2: Max forest (mostly forest, keep some current)
     target_forest = current_norm.copy()
@@ -50,7 +52,7 @@ def create_seed_prescriptors(
     target_forest[:, 1] = 0.1  # wetland
     target_forest[:, 2] = 0.05  # agriculture
     target_forest[:, 3] = 0.05  # grassland
-    seeds.append(_train_seed(features_norm, target_forest, in_size, hidden_size, n_epochs, lr))
+    seeds.append(_train_seed(features_norm, target_forest, in_size, hidden_size, n_epochs, lr, rng))
     
     # Seed 3: Restore wetland where suitable
     wetland_suit = context["wetland_suitability"].values
@@ -61,7 +63,7 @@ def create_seed_prescriptors(
     target_wetland[:, 2] -= shift
     # Renormalize
     target_wetland = target_wetland / target_wetland.sum(axis=1, keepdims=True)
-    seeds.append(_train_seed(features_norm, target_wetland, in_size, hidden_size, n_epochs, lr))
+    seeds.append(_train_seed(features_norm, target_wetland, in_size, hidden_size, n_epochs, lr, rng))
     
     # Seed 4: Balanced conservation (more forest + wetland, less agriculture)
     target_balanced = current_norm.copy()
@@ -71,7 +73,7 @@ def create_seed_prescriptors(
     target_balanced[:, 1] += shift * 0.4  # 40% to wetland
     target_balanced[:, 2] -= shift
     target_balanced = target_balanced / target_balanced.sum(axis=1, keepdims=True)
-    seeds.append(_train_seed(features_norm, target_balanced, in_size, hidden_size, n_epochs, lr))
+    seeds.append(_train_seed(features_norm, target_balanced, in_size, hidden_size, n_epochs, lr, rng))
     
     return seeds
 
@@ -83,12 +85,13 @@ def _train_seed(
     hidden_size: int,
     n_epochs: int,
     lr: float,
+    rng: np.random.Generator,
 ) -> Prescriptor:
     """Train a prescriptor to output target fractions via gradient descent.
     
     Uses KL-divergence / cross-entropy loss between softmax output and targets.
     """
-    p = Prescriptor(in_size, hidden_size)
+    p = Prescriptor(in_size, hidden_size, rng=rng)
     n = len(features)
     
     # Ensure targets are valid probability distributions
