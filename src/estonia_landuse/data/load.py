@@ -4,8 +4,8 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import rasterio
-from rasterio.mask import mask as rio_mask
 from owslib.wfs import WebFeatureService
+from rasterio.mask import mask as rio_mask
 from shapely.geometry import mapping
 
 from .constants import (
@@ -16,7 +16,6 @@ from .constants import (
     EELIS_WFS_URL,
     NATURALNESS_SCORES,
 )
-
 
 # Path to carbon v1.5 scores (relative to project root)
 _CARBON_V15_SCORES = None  # set lazily
@@ -278,6 +277,7 @@ def load_osm_layer(shp_path: str, county_grid: gpd.GeoDataFrame) -> gpd.GeoDataF
 
 def compute_road_density(grid: gpd.GeoDataFrame, roads: gpd.GeoDataFrame) -> np.ndarray:
     """Compute total road length (km) within each grid cell."""
+    _validate_grid_cell_ids(grid)
     if roads.empty:
         return np.zeros(len(grid))
     
@@ -285,26 +285,34 @@ def compute_road_density(grid: gpd.GeoDataFrame, roads: gpd.GeoDataFrame) -> np.
     joined = gpd.sjoin(roads, grid[["cell_id", "geometry"]], how="inner", predicate="intersects")
     
     # Clip roads to cell boundaries and measure length
-    densities = np.zeros(len(grid))
+    lengths_by_id = {}
     for cell_id, group in joined.groupby("cell_id"):
         cell_geom = grid.loc[grid["cell_id"] == cell_id, "geometry"].values[0]
         clipped = group.geometry.intersection(cell_geom)
         total_length_m = clipped.length.sum()
-        densities[cell_id] = total_length_m / 1000  # km
-    
-    return densities
+        lengths_by_id[cell_id] = total_length_m / 1000
+
+    return (
+        pd.Series(lengths_by_id, dtype=float)
+        .reindex(grid["cell_id"], fill_value=0.0)
+        .to_numpy()
+    )
 
 
 def compute_building_density(grid: gpd.GeoDataFrame, buildings: gpd.GeoDataFrame) -> np.ndarray:
     """Count number of buildings per grid cell."""
+    _validate_grid_cell_ids(grid)
     if buildings.empty:
         return np.zeros(len(grid))
     
     joined = gpd.sjoin(buildings, grid[["cell_id", "geometry"]], how="inner", predicate="intersects")
     counts = joined.groupby("cell_id").size()
     
-    densities = np.zeros(len(grid))
-    for cell_id, count in counts.items():
-        densities[cell_id] = count
-    
-    return densities
+    return counts.reindex(grid["cell_id"], fill_value=0).to_numpy(dtype=float)
+
+
+def _validate_grid_cell_ids(grid: gpd.GeoDataFrame) -> None:
+    if "cell_id" not in grid.columns:
+        raise ValueError("grid must contain a cell_id column")
+    if not grid["cell_id"].is_unique:
+        raise ValueError("grid cell_id values must be unique")
