@@ -13,6 +13,7 @@ Sources:
 import numpy as np
 import pandas as pd
 
+from ..data.constants import CELL_AREA_HA
 
 # Estonian NIR 2024 implied emission factors (tCO2/ha/yr)
 # Positive = net sequestration, Negative = net emission
@@ -78,10 +79,6 @@ NIR_TRANSITION_FACTORS = {
         "peat": -4.0,     # draining peat for forestry
     },
 }
-
-# Cell area in hectares (from grid resolution config)
-from ..data.constants import CELL_AREA_HA
-
 
 def estimate_carbon_nir(context: pd.DataFrame,
                         target_fractions: np.ndarray) -> pd.DataFrame:

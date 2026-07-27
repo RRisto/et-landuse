@@ -24,11 +24,8 @@ from typing import Optional
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from owslib.wfs import WebFeatureService
-from shapely.geometry import box
-
 from config import CRS, DATA_PROCESSED_CARBON
-
+from owslib.wfs import WebFeatureService
 
 # --- WFS endpoints ---
 MAARDLAD_WFS_URL = "https://teenus.maaamet.ee/ows/maardlad"
@@ -370,7 +367,7 @@ def process_soil_peat(grid: gpd.GeoDataFrame) -> pd.DataFrame:
 
     # Summary
     print(f"\n  Results ({len(df)} cells):")
-    print(f"    Peatland status distribution:")
+    print("    Peatland status distribution:")
     print(f"      {df['peatland_status'].value_counts().to_dict()}")
     print(f"    soil_carbon_relevance_score: mean={df['soil_carbon_relevance_score'].mean():.3f}")
     print(f"    wetland_restoration_soil_score: mean={df['wetland_restoration_soil_score'].mean():.3f}")

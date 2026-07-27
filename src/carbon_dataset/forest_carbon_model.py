@@ -10,17 +10,20 @@ Usage:
     predictions = predict_tco2(model, features_df)
 """
 
+from pathlib import Path
+
 import joblib
 import numpy as np
 import pandas as pd
-from pathlib import Path
 from sklearn.ensemble import GradientBoostingRegressor
 
 from .config import (
-    WOOD_DENSITY, CARBON_FRACTION, CO2_PER_C, BEF,
+    BEF,
+    CARBON_FRACTION,
+    CO2_PER_C,
     DATA_PROCESSED_CARBON,
+    WOOD_DENSITY,
 )
-
 
 MODEL_DIR = DATA_PROCESSED_CARBON.parent / "learned_carbon"
 MODEL_PATH = MODEL_DIR / "forest_carbon_gbr.joblib"

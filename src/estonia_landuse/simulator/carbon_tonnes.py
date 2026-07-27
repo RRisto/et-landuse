@@ -25,6 +25,7 @@ Actual values depend on soil type, tree species, drainage status, age, etc.
 import numpy as np
 import pandas as pd
 
+from ..data.constants import CELL_AREA_HA
 
 # --- Annual stock rates: tCO2/ha/year (low, mid, high) ---
 # What a land-use type sequesters (or emits) per year if unchanged.
@@ -75,10 +76,6 @@ TRANSITION_RATE = {
     # Intensification: grassland to cropland
     ("grassland", "agriculture"): (-3.0, -1.5, -0.5),
 }
-
-# Cell area in hectares (from grid resolution config)
-from ..data.constants import CELL_AREA_HA
-
 
 def _get_agriculture_stock_rate(peat_fraction: float) -> tuple:
     """Blend agriculture stock rate based on peat overlap."""

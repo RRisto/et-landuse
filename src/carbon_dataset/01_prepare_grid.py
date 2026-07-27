@@ -5,7 +5,6 @@ Outputs: data/processed/carbon_v1_5/grid.gpkg
 """
 
 import geopandas as gpd
-
 from config import BASE_GRID_PATH, CRS, DATA_PROCESSED_CARBON
 
 

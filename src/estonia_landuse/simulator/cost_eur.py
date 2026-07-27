@@ -27,7 +27,6 @@ Actual costs depend on site conditions, scale, labor market, subsidies.
 import numpy as np
 import pandas as pd
 
-
 # --- Implementation costs: EUR/ha (one-time) (low, mid, high) ---
 IMPLEMENTATION_COST = {
     # Afforestation: saplings, planting, 5-year maintenance

@@ -14,22 +14,19 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import rasterio
-from rasterio.mask import mask as rio_mask
-from shapely.geometry import mapping
-
 from config import (
     AFFORESTATION_BASE_SUITABILITY,
     ALL_GROUPS,
     CORINE_PIXEL_TO_CODE,
-    CORINE_TO_GROUP,
     CORINE_TIF,
+    CORINE_TO_GROUP,
     DATA_PROCESSED_CARBON,
     LAND_COVER_CARBON_LOOKUP,
     NATURALNESS_LOOKUP,
-    SOIL_PEAT_RELEVANCE_FALLBACK,
     WETLAND_BASE_SUITABILITY,
 )
-
+from rasterio.mask import mask as rio_mask
+from shapely.geometry import mapping
 
 # CLC code -> human-readable label (level 1 simplified)
 CLC_LABELS = {

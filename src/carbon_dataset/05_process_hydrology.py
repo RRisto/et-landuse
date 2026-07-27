@@ -24,11 +24,8 @@ import io
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-from owslib.wfs import WebFeatureService
-from shapely.ops import nearest_points
-
 from config import CRS, DATA_PROCESSED_CARBON
-
+from owslib.wfs import WebFeatureService
 
 ETAK_WFS_URL = "https://gsavalik.envir.ee/geoserver/etak/ows"
 PAGE_SIZE = 5000

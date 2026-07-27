@@ -10,12 +10,10 @@ Outputs:
 """
 
 from datetime import datetime
-from pathlib import Path
 
 import geopandas as gpd
 import pandas as pd
 import yaml
-
 from config import DATA_PROCESSED_CARBON
 
 

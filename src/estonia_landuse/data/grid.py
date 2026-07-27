@@ -6,7 +6,6 @@ Creates grids at configurable resolution by subdividing the Statistics Estonia
 
 import geopandas as gpd
 import numpy as np
-import pandas as pd
 from shapely.geometry import box
 
 from .constants import CRS_ESTONIAN, GRID_CELL_SIZE

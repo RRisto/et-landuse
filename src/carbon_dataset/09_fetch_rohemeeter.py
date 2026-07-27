@@ -13,9 +13,7 @@ import time
 from pathlib import Path
 
 import geopandas as gpd
-import numpy as np
 import pandas as pd
-
 
 # --- Paths ---
 CARBON_DIR = Path("data/processed/carbon_v1_5")
@@ -35,7 +33,6 @@ TIMEOUT_MS = 15000
 
 def _save_progress(results):
     """Save progress atomically (write to temp, then rename)."""
-    import tempfile
     PROGRESS_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = PROGRESS_PATH.with_suffix(".tmp")
     with open(tmp_path, "w") as f:
@@ -156,7 +153,7 @@ def run_fetch(delay=1.5, batch_size=100):
         try:
             for point_key, cell_id, x, y in remaining:
                 result = None
-                for attempt in range(MAX_RETRIES):
+                for _attempt in range(MAX_RETRIES):
                     result = fetch_score(page, x, y)
                     if result is not None:
                         break
