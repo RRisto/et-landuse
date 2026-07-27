@@ -55,6 +55,59 @@ uv run jupyter lab
 # 10    — Policy scenario comparison (5 scenarios, full Pareto analysis)
 ```
 
+### Installation profiles
+
+The default install contains the numerical core. Add only the tools needed for
+your workflow:
+
+```bash
+uv sync --extra pipeline   # geospatial processing and external data sources
+uv sync --extra notebook   # Jupyter and visualization
+uv sync --extra ml         # PyTorch, Streamlit, and Plotly
+uv sync --extra all        # complete research environment
+uv sync --extra dev        # tests and linting
+```
+
+Run the offline quality checks with:
+
+```bash
+uv run --extra dev pytest -q
+uv run --extra dev ruff check src tests
+```
+
+The automated tests use synthetic fixtures and do not download production
+datasets.
+
+### Reproducible and feasible evolution
+
+Pass an explicit seed when comparing experiments:
+
+```python
+population = train(
+    context,
+    feature_columns,
+    seed=42,
+)
+```
+
+Each prescriptor exposes `constraint_violation`. NSGA-II uses feasible-first
+selection: every policy with zero constraint violation outranks every
+infeasible policy. Feasible policies are then compared using biodiversity,
+carbon, cost, and changed area. Among infeasible policies, lower total
+violation ranks first.
+
+Use `estonia_landuse.scenarios.annotate_feasibility` and
+`build_scenario_summary` when preparing scenario reports so infeasible results
+remain visible and clearly labeled.
+
+### Reusing local Rohemeeter data
+
+Rohemeeter collection is expensive and can take a long time. Before running
+`src/carbon_dataset/09_fetch_rohemeeter.py` or its notebook, reuse existing
+files under `data/processed/` and any saved progress output. The repository
+ignores `data/`, so local artifacts can be shared between branches or
+worktrees without committing or downloading them again.
+
 ## Interactive visualizer
 
 A standalone HTML/JS app for exploring land-use scenarios without running Python.
