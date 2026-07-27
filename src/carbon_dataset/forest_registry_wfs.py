@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 # Config
-BBOX = "430000,6480000,530000,6570000"  # Lääne county approx, EPSG:3301
+BBOX = "430000,6475000,535000,6580000"  # Lääne county with margin, EPSG:3301
 WFS_URL = "https://gsavalik.envir.ee/geoserver/mr_portaal/wfs"
 PAGE_SIZE = 1000
 

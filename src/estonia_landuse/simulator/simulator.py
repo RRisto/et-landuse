@@ -167,13 +167,17 @@ def score_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     penalty[is_protected] += np.abs(delta[is_protected]).sum(axis=1) * 100.0
     
     # Penalize converting wetland to forest (ecologically wrong)
+    # Hard constraint: NEVER reduce existing wetland (wetland loss = 0)
     wetland_loss = np.clip(-delta[:, 1], 0, None)
-    forest_gain_where_wetland_lost = np.clip(delta[:, 0], 0, None) * (wetland_loss > 0.01).astype(float)
-    penalty += forest_gain_where_wetland_lost * 10.0
+    has_wetland_loss = wetland_loss > 0.01
+    # Zero out all gains and apply massive penalty for any wetland reduction
+    biodiversity_gain[has_wetland_loss] = 0.0
+    carbon_gain[has_wetland_loss] = 0.0
+    penalty[has_wetland_loss] += wetland_loss[has_wetland_loss] * 100.0
     
-    # Penalize converting existing high-value wetland to anything
-    is_wetland_cell = context["wetland_pct"].values > 0.3
-    penalty[is_wetland_cell] += wetland_loss[is_wetland_cell] * 10.0
+    # Penalize converting wetland to forest (ecologically wrong)
+    forest_gain_where_wetland_lost = np.clip(delta[:, 0], 0, None) * has_wetland_loss.astype(float)
+    penalty += forest_gain_where_wetland_lost * 50.0
     
     # Penalize cells that increase BOTH forest and wetland simultaneously
     # (physically contradictory — same land can't become both)

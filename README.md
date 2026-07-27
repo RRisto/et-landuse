@@ -39,10 +39,10 @@ uv sync
 uv run jupyter lab
 
 # Run notebooks in order:
-# 01    — Collect datasets (builds V1 feature table)
+# 01    — Collect datasets (builds base grid + features, supports 500m/1km)
 # 01.2  — Fetch Rohemeeter biodiversity scores
-# 01.3  — Validate features on map
-# 02    — Simulator and baselines
+# 01.4  — Process soil map (real peat coverage from Mullakaart)
+# 02    — Simulator and baselines (derives wetland_suitability, opportunity_cost, etc.)
 # 03    — Neuroevolution (NSGA-II training)
 # 03.1  — Neuroevolution with carbon v1.5
 # 03.2  — Neuroevolution with Rohemeeter biodiversity
@@ -52,6 +52,7 @@ uv run jupyter lab
 # 07    — Fetch detailed forest attributes (parallel)
 # 08    — Train GBR carbon predictor from real data
 # 09    — Spatial join + full model comparison + maps
+# 10    — Policy scenario comparison (5 scenarios, full Pareto analysis)
 ```
 
 ## Interactive visualizer
@@ -79,22 +80,25 @@ Features:
 
 ```
 ├── notebooks/
-│   ├── 01_collect_datasets.ipynb       # Build V1 features
-│   ├── 01.1_validate_features_map.ipynb # Visual validation of all features
-│   ├── 02_simulator_and_baselines.ipynb # Test simulator + baseline policies
+│   ├── 01_collect_datasets.ipynb       # Build base grid + V1 features (500m or 1km)
+│   ├── 01.2_fetch_rohemeeter.ipynb     # Rohemeeter biodiversity scores
+│   ├── 01.4_process_soil_map.ipynb     # Real peat coverage from Mullakaart SHP
+│   ├── 02_simulator_and_baselines.ipynb # Derive features + test baselines
 │   ├── 03_neuroevolution.ipynb          # NSGA-II evolution
 │   ├── 04_learned_carbon_predictor.ipynb # UNFCCC data + NIR vs flat comparison
 │   ├── 05_compare_carbon_models.ipynb   # Evolution: flat vs NIR Pareto fronts
 │   ├── 06_download_forest_registry.ipynb # Download WFS compartment geometries
 │   ├── 07_fetch_forest_details.ipynb    # Fetch detailed attributes (parallel)
 │   ├── 08_train_carbon_predictor.ipynb  # Train GBR from real forest data
-│   └── 09_spatial_join_and_model.ipynb  # Full pipeline: join + evolve + compare
+│   ├── 09_spatial_join_and_model.ipynb  # Full pipeline: join + evolve + compare
+│   └── 10_scenario_comparison.ipynb     # 5 policy scenarios side-by-side
 ├── src/
 │   ├── estonia_landuse/                 # Main package
 │   │   ├── data/                        # Loading, constants
 │   │   ├── simulator/                   # Scoring, constraints, config
 │   │   │   ├── carbon_tonnes.py         # Lookup-based carbon (V1.5)
 │   │   │   ├── carbon_nir.py           # NIR-calibrated carbon model
+│   │   │   ├── carbon_learned.py       # GBR-based carbon (pre-computed predictions)
 │   │   │   ├── cost_eur.py             # Cost estimation in EUR with CI
 │   │   │   ├── simulator.py            # Main scorer (supports model switching)
 │   │   │   └── config.py               # Config with carbon_model selector
@@ -129,7 +133,8 @@ Features:
 | CORINE Land Cover 2018 | Land cover proportions | Manual download (100m raster) |
 | EELIS WFS | Protected areas | Auto (WFS) |
 | OpenStreetMap (Geofabrik) | Roads, buildings | Auto-download |
-| Maa-amet maardlad WFS | Peat deposits | Auto (WFS) |
+| Maa-amet maardlad WFS | Peat deposits (mining registry) | Auto (WFS) |
+| Maa-amet Mullakaart | Soil type map (real peat/organic soil coverage) | Manual download (SHP, ~818 MB) |
 | ETAK WFS | Wetlands, streams, ditches, waterbodies | Auto (WFS) |
 | ESA CCI Biomass v7 | Above-ground biomass | Manual download |
 | Forest Registry (metsaregister) | Compartment boundaries + forestry data | Auto (WFS + REST API) |
@@ -248,6 +253,33 @@ The NIR model dominates the flat model in cross-evaluation:
 - NIR-evolved policies score well under both models
 - NIR model finds strategies that also improve biodiversity (avoids ecologically damaging transitions)
 - NIR model's Pareto front is shorter but represents achievable gains
+
+## Policy Scenario Comparison (Notebook 10)
+
+Five scenarios explore how different policy priorities shape trade-offs:
+
+| Scenario | Key difference |
+|----------|---------------|
+| **Green Maximum** | Low agriculture protection, high carbon/bio weights — max ecological gain |
+| **Food Security** | High agriculture preservation (max 5% loss), expensive to convert farmland |
+| **Low Budget** | Max 10% land change, high intervention cost — what's achievable cheaply? |
+| **Wetland Priority** | Lower suitability threshold, higher biodiversity value for wetland |
+| **Balanced** | Default constraints — middle ground |
+
+All scenarios use the learned carbon model and pre-computed GBR predictions.
+
+## Grid Resolution
+
+Configurable via `GRID_CELL_SIZE` in `src/estonia_landuse/data/constants.py`:
+
+| Resolution | Cells (Lääne) | CORINE pixels/cell | Runtime/model |
+|-----------|--------------|-------------------|---------------|
+| 1000m | ~2,800 | ~100 | ~30s |
+| 500m | ~11,200 | ~25 | ~8 min |
+| 250m | ~45,000 | ~6 | ~30 min |
+
+Default: 500m. All carbon modules (`carbon_nir.py`, `carbon_tonnes.py`, `carbon_learned.py`)
+automatically use the correct cell area from `constants.CELL_AREA_HA`.
 
 ## Key findings (Lääne county)
 

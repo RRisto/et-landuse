@@ -76,8 +76,8 @@ TRANSITION_RATE = {
     ("grassland", "agriculture"): (-3.0, -1.5, -0.5),
 }
 
-# Cell area in hectares (1 km² = 100 ha)
-CELL_AREA_HA = 100.0
+# Cell area in hectares (from grid resolution config)
+from ..data.constants import CELL_AREA_HA
 
 
 def _get_agriculture_stock_rate(peat_fraction: float) -> tuple:

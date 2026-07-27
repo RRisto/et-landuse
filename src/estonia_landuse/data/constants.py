@@ -10,6 +10,10 @@ DATA_PROCESSED = PROJECT_ROOT / "data" / "processed" / "v1"
 # CRS
 CRS_ESTONIAN = "EPSG:3301"
 
+# Grid resolution (meters)
+GRID_CELL_SIZE = 500  # 500m × 500m (change to 1000 for original 1km grid)
+CELL_AREA_HA = (GRID_CELL_SIZE / 1000) ** 2 * 100  # 25 ha for 500m, 100 ha for 1km
+
 # Demo county — Lääne (Lääne County)
 COUNTY_NAME = "Lääne"
 

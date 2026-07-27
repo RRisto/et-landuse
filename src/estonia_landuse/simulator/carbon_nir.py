@@ -79,8 +79,8 @@ NIR_TRANSITION_FACTORS = {
     },
 }
 
-# Cell area in hectares (1 km² = 100 ha)
-CELL_AREA_HA = 100.0
+# Cell area in hectares (from grid resolution config)
+from ..data.constants import CELL_AREA_HA
 
 
 def estimate_carbon_nir(context: pd.DataFrame,
@@ -147,8 +147,6 @@ def estimate_carbon_nir(context: pd.DataFrame,
 
     # Hard gate: no carbon credit for wetland conversion where suitability < 0.3
     wetland_feasible = np.where(wetland_suit >= 0.3, wetland_suit, 0.0)
-    # Also cap max creditable wetland gain to suitability * 0.3 (max 30% even in best cells)
-    max_wetland_gain = wetland_feasible * 0.3
 
     # For each transition pair, compute area transitioning and apply EF
     tco2 = np.zeros(n)
@@ -162,9 +160,9 @@ def estimate_carbon_nir(context: pd.DataFrame,
         # Transition area = loss_share_from * gain_share_to * total_change
         transition_frac = loss_share[:, i_from] * gain_share[:, i_to] * total_change
 
-        # Gate wetland transitions: only credit up to feasible amount
+        # Gate wetland transitions by suitability
         if g_to == "wetland":
-            transition_frac = np.minimum(transition_frac, max_wetland_gain) * wetland_feasible
+            transition_frac = transition_frac * wetland_feasible
 
         # Emission factor blended by peat
         ef = factors["mineral"] * (1 - peat_frac) + factors["peat"] * peat_frac

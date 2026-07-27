@@ -27,7 +27,7 @@ MODEL_PATH = MODEL_DIR / "forest_carbon_gbr.joblib"
 
 # Features the model expects (in this order)
 FEATURE_COLS = ["peapuuliik", "keskmVanus", "boniteediKood",
-                "kuivendatud", "kasvukohaKood", "korgus"]
+                "kuivendatud", "kasvukohaKood", "pindala", "korgus"]
 
 # Combined conversion factor: density is applied per-species separately
 CO2_CONV = CARBON_FRACTION * CO2_PER_C * BEF
