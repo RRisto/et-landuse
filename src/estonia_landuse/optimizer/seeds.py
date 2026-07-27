@@ -7,7 +7,7 @@ evolution starts from known-good regions of the search space.
 import numpy as np
 import pandas as pd
 
-from .prescriptor import Prescriptor, N_OUTPUTS
+from .prescriptor import Prescriptor
 
 
 def create_seed_prescriptors(
@@ -34,8 +34,6 @@ def create_seed_prescriptors(
         context["agriculture_pct"].values,
         context["grassland_pct"].values,
     ]).astype(np.float32)
-    
-    available = np.clip(1.0 - context["urban_pct"].values - context["water_pct"].values, 0, 1)
     
     # Normalize current to sum to 1 (for softmax targets)
     current_sum = current.sum(axis=1, keepdims=True)
@@ -97,7 +95,7 @@ def _train_seed(
     target_fractions = np.clip(target_fractions, 1e-8, None)
     target_fractions = target_fractions / target_fractions.sum(axis=1, keepdims=True)
     
-    for epoch in range(n_epochs):
+    for _epoch in range(n_epochs):
         w1, b1, w2, b2 = p._unpack_params()
         
         # Forward

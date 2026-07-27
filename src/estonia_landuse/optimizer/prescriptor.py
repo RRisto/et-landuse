@@ -2,9 +2,6 @@
 
 import numpy as np
 
-from ..simulator.actions import N_LAND_USE_GROUPS
-
-
 # Output size: target fractions for [forest, wetland, agriculture, grassland]
 N_OUTPUTS = 4  # changeable groups only (urban/water are fixed)
 
@@ -39,6 +36,7 @@ class Prescriptor:
         # Fitness metrics (set by trainer)
         self.metrics = None
         self.rank = None
+        self.constraint_violation = None
 
     def prescribe(self, features: np.ndarray) -> np.ndarray:
         """Given feature matrix (n_cells, in_size), return target fractions (n_cells, 4).

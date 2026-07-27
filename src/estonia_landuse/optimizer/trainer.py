@@ -3,9 +3,9 @@
 import numpy as np
 import pandas as pd
 
-from .prescriptor import Prescriptor
-from .nsga2 import fast_non_dominated_sort, crowding_distance
 from ..simulator.simulator import summarize_policy
+from .nsga2 import crowding_distance, fast_non_dominated_sort
+from .prescriptor import Prescriptor
 
 
 def train(
@@ -95,6 +95,7 @@ def _evaluate_population(population, features_norm, context, config):
             summary["cost"],
             summary["changed_pct"],
         )
+        p.constraint_violation = summary["constraint_penalty"]
 
 
 def _create_offspring(population, n_offspring, p_mutation, mutation_factor):
@@ -130,7 +131,11 @@ def _tournament_select(population, k=3):
 def _select(combined, pop_size):
     """NSGA-II selection: fill next generation by fronts + crowding distance."""
     metrics_list = [p.metrics for p in combined]
-    fronts = fast_non_dominated_sort(metrics_list)
+    constraint_violations = [
+        p.constraint_violation if p.constraint_violation is not None else float("inf")
+        for p in combined
+    ]
+    fronts = fast_non_dominated_sort(metrics_list, constraint_violations)
     
     next_gen = []
     for rank, front in enumerate(fronts):
