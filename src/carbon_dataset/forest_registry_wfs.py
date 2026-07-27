@@ -8,17 +8,22 @@ Usage:
     download_laane_compartments("data/raw/forest_registry/laane_eraldised.gpkg")
 """
 
-import geopandas as gpd
-import pandas as pd
-import requests
 import re
 import time
 from pathlib import Path
+
+import geopandas as gpd
+import pandas as pd
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # Config
 BBOX = "430000,6475000,535000,6580000"  # Lääne county with margin, EPSG:3301
 WFS_URL = "https://gsavalik.envir.ee/geoserver/mr_portaal/wfs"
 PAGE_SIZE = 1000
+REQUEST_TIMEOUT = (10, 60)
+MAX_RETRIES = 3
 
 LAYERS = [
     ("mr_portaal:eraldis-rmk", "rmk"),   # state forest
@@ -26,20 +31,53 @@ LAYERS = [
 ]
 
 
-def get_feature_count(layer: str, bbox: str = BBOX) -> int:
+def create_session() -> requests.Session:
+    """Create a WFS session with bounded retries for transient failures."""
+    retry = Retry(
+        total=MAX_RETRIES,
+        connect=MAX_RETRIES,
+        read=MAX_RETRIES,
+        status=MAX_RETRIES,
+        backoff_factor=0.5,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset({"GET"}),
+        raise_on_status=True,
+    )
+    session = requests.Session()
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+
+def get_feature_count(
+    layer: str,
+    bbox: str = BBOX,
+    session: requests.Session | None = None,
+) -> int:
     """Get total feature count for a layer within BBOX."""
-    r = requests.get(WFS_URL, params={
+    session = create_session() if session is None else session
+    r = session.get(WFS_URL, params={
         "service": "WFS", "version": "2.0.0", "request": "GetFeature",
         "typeNames": layer, "resultType": "hits",
         "BBOX": f"{bbox},EPSG:3301",
-    })
+    }, timeout=REQUEST_TIMEOUT)
+    r.raise_for_status()
     match = re.search(r'numberMatched="(\d+)"', r.text)
-    return int(match.group(1)) if match else 0
+    if match is None:
+        raise RuntimeError(f"WFS response for {layer} did not contain numberMatched")
+    return int(match.group(1))
 
 
-def download_layer(layer: str, label: str, bbox: str = BBOX) -> gpd.GeoDataFrame:
+def download_layer(
+    layer: str,
+    label: str,
+    bbox: str = BBOX,
+    session: requests.Session | None = None,
+) -> gpd.GeoDataFrame:
     """Download all features for a layer, paged."""
-    total = get_feature_count(layer, bbox)
+    session = create_session() if session is None else session
+    total = get_feature_count(layer, bbox, session=session)
     print(f"  {label}: {total:,} features to download")
 
     all_gdfs = []
@@ -47,7 +85,7 @@ def download_layer(layer: str, label: str, bbox: str = BBOX) -> gpd.GeoDataFrame
 
     while offset < total:
         t0 = time.time()
-        r = requests.get(WFS_URL, params={
+        r = session.get(WFS_URL, params={
             "service": "WFS", "version": "2.0.0", "request": "GetFeature",
             "typeNames": layer,
             "outputFormat": "application/json",
@@ -55,11 +93,8 @@ def download_layer(layer: str, label: str, bbox: str = BBOX) -> gpd.GeoDataFrame
             "startIndex": str(offset),
             "BBOX": f"{bbox},EPSG:3301",
             "srsName": "EPSG:3301",
-        })
-
-        if r.status_code != 200:
-            print(f"    ERROR at offset {offset}: HTTP {r.status_code}")
-            break
+        }, timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
 
         data = r.json()
         features = data.get("features", [])
@@ -77,6 +112,11 @@ def download_layer(layer: str, label: str, bbox: str = BBOX) -> gpd.GeoDataFrame
 
     print()
 
+    if offset != total:
+        raise RuntimeError(
+            f"incomplete WFS download for {layer}: received {offset} of {total} features"
+        )
+
     if not all_gdfs:
         return gpd.GeoDataFrame()
 
@@ -91,7 +131,7 @@ def download_laane_compartments(output_path: str | Path, bbox: str = BBOX):
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"Downloading forest compartments for Lääne county")
+    print("Downloading forest compartments for Lääne county")
     print(f"BBOX: {bbox} (EPSG:3301)")
     print(f"Output: {output_path}")
     print()

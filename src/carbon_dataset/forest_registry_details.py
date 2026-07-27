@@ -10,10 +10,10 @@ Usage:
 """
 
 import asyncio
-import aiohttp
-import pandas as pd
 import time
 
+import aiohttp
+import pandas as pd
 
 DETAIL_URL = "https://register.metsad.ee/portaal/api/rest/eraldis/detail"
 
@@ -77,6 +77,9 @@ def fetch_details_parallel(
     Returns:
         DataFrame with detailed attributes for each compartment.
     """
+    if not eraldis_ids:
+        return pd.DataFrame()
+
     print(f"Fetching details for {len(eraldis_ids):,} compartments "
           f"({n_workers} parallel workers)")
 
