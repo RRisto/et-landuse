@@ -26,6 +26,7 @@ import numpy as np
 import pandas as pd
 
 from ..data.constants import CELL_AREA_HA
+from .targets import normalize_targets
 
 # --- Annual stock rates: tCO2/ha/year (low, mid, high) ---
 # What a land-use type sequesters (or emits) per year if unchanged.
@@ -137,14 +138,7 @@ def estimate_carbon_tonnes(context: pd.DataFrame,
     else:
         peat_frac = np.zeros(n)
 
-    # Normalize targets to available land
-    urban = context["urban_pct"].values
-    water = context["water_pct"].values
-    available_land = np.clip(1.0 - urban - water, 0, 1)
-
-    target_sum = target_fractions.sum(axis=1, keepdims=True)
-    target_sum = np.where(target_sum > 0, target_sum, 1.0)
-    targets = target_fractions / target_sum * available_land[:, None]
+    targets = normalize_targets(context, target_fractions)
 
     delta = targets - current
 

@@ -10,6 +10,7 @@ import pandas as pd
 from ..validation import validate_context_columns, validate_target_fractions
 from .carbon_nir import score_carbon_nir
 from .config import default_config
+from .targets import GROUP_COLUMNS, realize_targets
 
 REQUIRED_CONTEXT_COLUMNS = [
     "forest_pct",
@@ -49,22 +50,14 @@ def score_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     sc = config.get("scoring", {})
     
     # Current fractions for changeable groups
-    current = np.column_stack([
-        context["forest_pct"].values,
-        context["wetland_pct"].values,
-        context["agriculture_pct"].values,
-        context["grassland_pct"].values,
-    ])
+    current = context[GROUP_COLUMNS].to_numpy(dtype=float)
     
     # Fixed fractions (urban + water = land the prescriptor can't touch)
     urban = context["urban_pct"].values
     water = context["water_pct"].values
     available_land = np.clip(1.0 - urban - water, 0, 1)
     
-    # Normalize target fractions to sum to available land per cell
-    target_sum = target_fractions.sum(axis=1, keepdims=True)
-    target_sum = np.where(target_sum > 0, target_sum, 1.0)
-    targets = target_fractions / target_sum * available_land[:, None]
+    targets = realize_targets(context, target_fractions, config)
     
     # Compute transitions (delta per group)
     delta = targets - current  # positive = increase, negative = decrease
@@ -83,11 +76,11 @@ def score_policy(context: pd.DataFrame, target_fractions: np.ndarray,
 
     if carbon_model == "nir":
         # NIR-calibrated: uses Estonian NIR emission factors by transition type
-        carbon_gain = score_carbon_nir(context, target_fractions)
+        carbon_gain = score_carbon_nir(context, targets)
     elif carbon_model == "learned":
         # Learned model: GBR for forest sequestration + NIR for other transitions
         from .carbon_learned import score_carbon_learned
-        carbon_gain = score_carbon_learned(context, target_fractions, config)
+        carbon_gain = score_carbon_learned(context, targets, config)
     else:
         # V1.5 or flat model (existing logic)
         carbon_v15 = config.get("carbon_v1_5", {})
@@ -178,8 +171,6 @@ def score_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     biodiversity_gain[is_protected] = 0.0
     carbon_gain[is_protected] = 0.0
     change_pct[is_protected] = 0.0  # don't count toward budget
-    # Massive penalty proportional to how much change is attempted
-    penalty[is_protected] += np.abs(delta[is_protected]).sum(axis=1) * 100.0
     
     # Penalize converting wetland to forest (ecologically wrong)
     # Hard constraint: NEVER reduce existing wetland (wetland loss = 0)
@@ -193,13 +184,6 @@ def score_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     # Penalize converting wetland to forest (ecologically wrong)
     forest_gain_where_wetland_lost = np.clip(delta[:, 0], 0, None) * has_wetland_loss.astype(float)
     penalty += forest_gain_where_wetland_lost * 50.0
-    
-    # Penalize cells that increase BOTH forest and wetland simultaneously
-    # (physically contradictory — same land can't become both)
-    forest_gain = np.clip(delta[:, 0], 0, None)
-    wetland_gain = np.clip(delta[:, 1], 0, None)
-    dual_increase = np.minimum(forest_gain, wetland_gain)  # the overlapping part
-    penalty += dual_increase * 15.0
     
     # Penalize wetland increase where suitability is low
     wetland_suit = context["wetland_suitability"].values
@@ -243,13 +227,7 @@ def summarize_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     max_total_agri_loss = config.get("max_total_agri_loss_pct", 0.20)
     current_agri_total = context["agriculture_pct"].values.sum()
     if current_agri_total > 0:
-        # Compute target agriculture fractions
-        urban = context["urban_pct"].values
-        water = context["water_pct"].values
-        available_land = np.clip(1.0 - urban - water, 0, 1)
-        target_sum = target_fractions.sum(axis=1, keepdims=True)
-        target_sum = np.where(target_sum > 0, target_sum, 1.0)
-        targets = target_fractions / target_sum * available_land[:, None]
+        targets = realize_targets(context, target_fractions, config)
         target_agri_total = targets[:, 2].sum()  # agriculture is index 2
         agri_loss_frac = (current_agri_total - target_agri_total) / current_agri_total
         excess_agri_loss = max(0.0, agri_loss_frac - max_total_agri_loss)

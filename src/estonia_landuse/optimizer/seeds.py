@@ -39,7 +39,12 @@ def create_seed_prescriptors(
     
     # Normalize current to sum to 1 (for softmax targets)
     current_sum = current.sum(axis=1, keepdims=True)
-    current_norm = np.where(current_sum > 0, current / current_sum, 0.25)
+    current_norm = np.divide(
+        current,
+        current_sum,
+        out=np.full_like(current, 0.25),
+        where=current_sum > 0,
+    )
     
     seeds = []
     

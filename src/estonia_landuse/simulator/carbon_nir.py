@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from ..data.constants import CELL_AREA_HA
+from .targets import normalize_targets
 
 # Estonian NIR 2024 implied emission factors (tCO2/ha/yr)
 # Positive = net sequestration, Negative = net emission
@@ -108,14 +109,7 @@ def estimate_carbon_nir(context: pd.DataFrame,
         peat_frac = np.zeros(n)
     peat_frac = np.clip(peat_frac, 0, 1)
 
-    # Normalize targets to available land
-    urban = context["urban_pct"].values if "urban_pct" in context.columns else np.zeros(n)
-    water = context["water_pct"].values if "water_pct" in context.columns else np.zeros(n)
-    available_land = np.clip(1.0 - urban - water, 0, 1)
-
-    target_sum = target_fractions.sum(axis=1, keepdims=True)
-    target_sum = np.where(target_sum > 0, target_sum, 1.0)
-    targets = target_fractions / target_sum * available_land[:, None]
+    targets = normalize_targets(context, target_fractions)
 
     delta = targets - current  # (n, 4)
 
