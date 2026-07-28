@@ -10,23 +10,38 @@ from .optimizer.nsga2 import CONSTRAINT_TOLERANCE
 SUMMARY_COLUMNS = [
     "Scenario",
     "Status",
-    "Bio (best)",
-    "Carbon (best bio)",
-    "Cost (best bio)",
-    "Changed % (best bio)",
-    "Constraint violation (best bio)",
+    "Selection rule",
+    "Policy ID",
+    "Biodiversity gain",
+    "Carbon gain",
+    "Cost",
+    "Changed land",
+    "Agriculture loss",
+    "Wetland gain",
+    "Constraint violation",
     "Feasible solutions",
     "Front size",
     "Time (s)",
 ]
 
 REQUIRED_METRIC_COLUMNS = [
+    "id",
     "biodiversity_gain",
     "carbon_gain",
     "cost",
     "changed_pct",
+    "agriculture_loss_pct",
+    "wetland_gain_pct",
     "constraint_penalty",
 ]
+
+SELECTION_RULES = {
+    "green_maximum",
+    "food_security",
+    "low_budget",
+    "wetland_priority",
+    "balanced",
+}
 
 
 def annotate_feasibility(
@@ -49,9 +64,86 @@ def annotate_feasibility(
     return result
 
 
+def _normalized_loss(values: pd.Series, *, maximize: bool) -> pd.Series:
+    numeric = pd.to_numeric(values, errors="coerce")
+    span = numeric.max() - numeric.min()
+    if not np.isfinite(span) or span <= 0:
+        return pd.Series(0.0, index=values.index)
+    if maximize:
+        return (numeric.max() - numeric) / span
+    return (numeric - numeric.min()) / span
+
+
+def select_representative(
+    metrics: pd.DataFrame,
+    rule: str,
+    tolerance: float = CONSTRAINT_TOLERANCE,
+) -> pd.Series:
+    """Select one deterministic feasible policy using a scenario rule."""
+    if rule not in SELECTION_RULES:
+        raise ValueError(f"unsupported selection rule: {rule}")
+    annotated = annotate_feasibility(metrics, tolerance=tolerance)
+    candidates = annotated.loc[annotated["is_feasible"]].copy()
+    if candidates.empty:
+        minimum = annotated["constraint_penalty"].min()
+        candidates = annotated.loc[
+            annotated["constraint_penalty"] == minimum
+        ].copy()
+
+    bio = _normalized_loss(candidates["biodiversity_gain"], maximize=True)
+    carbon = _normalized_loss(candidates["carbon_gain"], maximize=True)
+    cost = _normalized_loss(candidates["cost"], maximize=False)
+    changed = _normalized_loss(candidates["changed_pct"], maximize=False)
+    wetland = _normalized_loss(candidates["wetland_gain_pct"], maximize=True)
+
+    if rule == "green_maximum":
+        score = bio + carbon
+    elif rule == "food_security":
+        score = bio
+    elif rule == "low_budget":
+        score = np.sqrt(bio**2 + carbon**2 + cost**2)
+    elif rule == "wetland_priority":
+        score = wetland
+    else:
+        score = np.sqrt(bio**2 + carbon**2 + cost**2 + changed**2)
+
+    candidates["_selection_score"] = score
+    ordered = candidates.sort_values(
+        ["_selection_score", "cost", "changed_pct", "id"],
+        ascending=True,
+        kind="stable",
+    )
+    return ordered.iloc[0].drop(labels="_selection_score")
+
+
+def select_scenario_representatives(
+    pareto_frames: Mapping[str, pd.DataFrame],
+    selection_rules: Mapping[str, str],
+    tolerance: float = CONSTRAINT_TOLERANCE,
+) -> dict[str, pd.Series]:
+    """Select one representative for every named scenario."""
+    missing = [
+        scenario for scenario in pareto_frames if scenario not in selection_rules
+    ]
+    if missing:
+        raise ValueError(
+            "missing selection rules for scenarios: " + ", ".join(missing)
+        )
+    return {
+        scenario: select_representative(
+            frame,
+            selection_rules[scenario],
+            tolerance=tolerance,
+        )
+        for scenario, frame in pareto_frames.items()
+    }
+
+
 def build_scenario_summary(
     pareto_frames: Mapping[str, pd.DataFrame],
     *,
+    representatives: Mapping[str, pd.Series],
+    selection_rules: Mapping[str, str],
     scenario_labels: Mapping[str, str] | None = None,
     elapsed_seconds: Mapping[str, float] | None = None,
     tolerance: float = CONSTRAINT_TOLERANCE,
@@ -71,28 +163,34 @@ def build_scenario_summary(
             raise ValueError(f"scenario {scenario_name!r} has an empty Pareto front")
 
         annotated = annotate_feasibility(frame, tolerance=tolerance)
-        feasible = annotated.loc[annotated["is_feasible"]]
-        if feasible.empty:
-            status = "infeasible"
-            candidates = annotated.sort_values(
-                ["constraint_penalty", "biodiversity_gain"],
-                ascending=[True, False],
-                na_position="last",
+        if scenario_name not in representatives:
+            raise ValueError(
+                f"scenario {scenario_name!r} is missing a representative"
             )
-            best = candidates.iloc[0]
-        else:
-            status = "feasible"
-            best = feasible.loc[feasible["biodiversity_gain"].idxmax()]
+        if scenario_name not in selection_rules:
+            raise ValueError(
+                f"scenario {scenario_name!r} is missing a selection rule"
+            )
+        representative = representatives[scenario_name]
+        status = (
+            "feasible"
+            if bool(representative["is_feasible"])
+            else "infeasible"
+        )
 
         rows.append(
             {
                 "Scenario": labels.get(scenario_name, scenario_name),
                 "Status": status,
-                "Bio (best)": best["biodiversity_gain"],
-                "Carbon (best bio)": best["carbon_gain"],
-                "Cost (best bio)": best["cost"],
-                "Changed % (best bio)": best["changed_pct"],
-                "Constraint violation (best bio)": best["constraint_penalty"],
+                "Selection rule": selection_rules[scenario_name],
+                "Policy ID": int(representative["id"]),
+                "Biodiversity gain": representative["biodiversity_gain"],
+                "Carbon gain": representative["carbon_gain"],
+                "Cost": representative["cost"],
+                "Changed land": representative["changed_pct"],
+                "Agriculture loss": representative["agriculture_loss_pct"],
+                "Wetland gain": representative["wetland_gain_pct"],
+                "Constraint violation": representative["constraint_penalty"],
                 "Feasible solutions": int(annotated["is_feasible"].sum()),
                 "Front size": len(annotated),
                 "Time (s)": elapsed.get(scenario_name, float("nan")),
