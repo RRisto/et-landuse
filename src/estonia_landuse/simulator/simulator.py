@@ -219,6 +219,8 @@ def summarize_policy(context: pd.DataFrame, target_fractions: np.ndarray,
         config = default_config()
     
     outcomes = score_policy(context, target_fractions, config)
+    biodiversity_gain = outcomes["biodiversity_gain"].mean()
+    carbon_gain = outcomes["carbon_gain"].mean()
     changed_pct = outcomes["change_pct"].mean()
     targets = realize_targets(context, target_fractions, config)
 
@@ -273,21 +275,41 @@ def summarize_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     agriculture_gain_excess = max(
         0.0, agriculture_gain_pct - max_total_agri_gain
     )
+    min_total_agri_gain = config.get("min_total_agri_gain_pct", 0.0)
+    agriculture_gain_shortfall = max(
+        0.0, min_total_agri_gain - agriculture_gain_pct
+    )
+    max_gross_agri_loss = config.get("max_gross_agri_loss_pct", 1.0)
+    gross_agriculture_loss_excess = max(
+        0.0, gross_agriculture_loss_pct - max_gross_agri_loss
+    )
     max_gross_agri_gain = config.get("max_gross_agri_gain_pct", 1.0)
     gross_agriculture_gain_excess = max(
         0.0, gross_agriculture_gain_pct - max_gross_agri_gain
+    )
+    biodiversity_shortfall = max(
+        0.0,
+        config.get("min_biodiversity_gain", -1.0) - biodiversity_gain,
+    )
+    carbon_shortfall = max(
+        0.0,
+        config.get("min_carbon_gain", -1.0) - carbon_gain,
     )
     constraint_penalty = (
         outcomes["constraint_penalty"].mean()
         + changed_excess
         + excess_agri_loss
         + agriculture_gain_excess
+        + agriculture_gain_shortfall
+        + gross_agriculture_loss_excess
         + gross_agriculture_gain_excess
+        + biodiversity_shortfall
+        + carbon_shortfall
     )
     
     return {
-        "biodiversity_gain": outcomes["biodiversity_gain"].mean(),
-        "carbon_gain": outcomes["carbon_gain"].mean(),
+        "biodiversity_gain": biodiversity_gain,
+        "carbon_gain": carbon_gain,
         "cost": outcomes["cost"].mean() + budget_penalty,
         "constraint_penalty": constraint_penalty,
         "changed_pct": changed_pct,
