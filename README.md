@@ -331,21 +331,24 @@ The NIR model dominates the flat model in cross-evaluation:
 Five scenarios explore how hard policy limits and selection priorities shape
 trade-offs:
 
-| Scenario | Maximum changed land | Maximum agriculture loss | Representative |
-|----------|---------------------:|-------------------------:|----------------|
-| **Green Maximum** | 40% | 50% | Highest normalized biodiversity + carbon |
-| **Food Security** | 15% | 3% | Highest biodiversity among feasible policies |
-| **Low Budget** | 6% | 15% | Normalized biodiversity/carbon/cost knee |
-| **Wetland Priority** | 25% | 15% | Highest wetland gain |
-| **Balanced** | 20% | 15% | Normalized biodiversity/carbon/cost/change knee |
+| Scenario | Maximum changed land | Maximum agriculture loss | Maximum agriculture gain (net/gross) | Representative |
+|----------|---------------------:|-------------------------:|-------------------------:|----------------|
+| **Green Maximum** | 40% | 50% | No scenario cap | Highest normalized biodiversity + carbon |
+| **Food Security** | 15% | 3% | No scenario cap | Highest biodiversity among feasible policies |
+| **Low Budget** | 6% | 15% | No scenario cap | Normalized biodiversity/carbon/cost knee |
+| **Wetland Priority** | 25% | 15% | 5% / 15% | Normalized biodiversity/carbon/cost/wetland knee |
+| **Balanced** | 20% | 15% | No scenario cap | Normalized biodiversity/carbon/cost/change knee |
 
 All scenarios use the learned carbon model and prepared grid-cell predictions.
 Changed-land and agriculture-loss excess are hard feasibility violations.
 Wetland Priority replaces changed-land minimization with wetland-gain
-maximization as the fourth objective. Other scenarios minimize changed land.
+maximization as the fourth objective, caps net agriculture expansion at 5%
+and gross expansion at 15%, and prices gross agriculture expansion. Other
+scenarios minimize changed land.
 
 Notebook 10 selects one representative per scenario and reuses that exact
-policy in the summary, plots, and saved GeoPackages. See
+policy in the summary, plots, and saved GeoPackages. A dedicated wetland-gain
+figure shows rewetting that the dominant-action map can hide. See
 [docs/scenario-comparison.md](docs/scenario-comparison.md) for prerequisites,
 outputs, and interpretation guidance.
 

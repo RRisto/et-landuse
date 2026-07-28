@@ -34,13 +34,13 @@ The percentages below are hard feasibility limits. A policy exceeding either
 limit receives positive `constraint_penalty`; feasible-first NSGA-II ranks
 every feasible policy ahead of every infeasible policy.
 
-| Scenario | Maximum changed land | Maximum agriculture loss | Fourth objective |
-|----------|---------------------:|-------------------------:|------------------|
-| Green Maximum | 40% | 50% | Minimize changed land |
-| Food Security | 15% | 3% | Minimize changed land |
-| Low Budget | 6% | 15% | Minimize changed land |
-| Wetland Priority | 25% | 15% | Maximize wetland gain |
-| Balanced | 20% | 15% | Minimize changed land |
+| Scenario | Maximum changed land | Maximum agriculture loss | Maximum agriculture gain (net/gross) | Fourth objective |
+|----------|---------------------:|-------------------------:|-------------------------:|------------------|
+| Green Maximum | 40% | 50% | No scenario cap | Minimize changed land |
+| Food Security | 15% | 3% | No scenario cap | Minimize changed land |
+| Low Budget | 6% | 15% | No scenario cap | Minimize changed land |
+| Wetland Priority | 25% | 15% | 5% / 15% | Maximize wetland gain |
+| Balanced | 20% | 15% | No scenario cap | Minimize changed land |
 
 All scenarios also maximize biodiversity gain and carbon gain and minimize
 cost. Existing physical constraints remain active:
@@ -51,10 +51,14 @@ cost. Existing physical constraints remain active:
 - modeled land share is conserved; and
 - target fractions remain non-negative.
 
-`agriculture_loss_pct` is total non-negative agriculture loss divided by
-current county-wide agriculture. `wetland_gain_pct` is total non-negative
-wetland increase divided by current county-wide wetland. Values are stored as
-fractions: `0.03` means 3%.
+`agriculture_loss_pct` and `agriculture_gain_pct` report non-negative
+county-wide net change relative to current agriculture. Gross agriculture loss
+and gain separately sum cell-level decreases and increases, revealing
+relocation that the net metrics can hide. Wetland Priority prices gross
+agriculture expansion and treats net expansion above 5% or gross expansion
+above 15% as infeasible.
+`wetland_gain_pct` is total non-negative wetland increase divided by current
+county-wide wetland. Values are stored as fractions: `0.03` means 3%.
 
 ## Representative selection
 
@@ -67,12 +71,13 @@ scenario `infeasible`.
 | Green Maximum | Maximize the sum of independently normalized biodiversity and carbon gains |
 | Food Security | Maximize biodiversity gain |
 | Low Budget | Minimize distance to the normalized biodiversity/carbon/cost ideal |
-| Wetland Priority | Maximize wetland gain |
+| Wetland Priority | Minimize distance to the normalized biodiversity/carbon/cost/wetland ideal |
 | Balanced | Minimize distance to the normalized biodiversity/carbon/cost/changed-land ideal |
 
 Ties are deterministic: lower cost, then lower changed land, then lower stable
 policy ID. The selected policy is computed once and reused for the summary,
-dominant-action plot, change-intensity plot, and saved GeoPackage.
+dominant-action plot, change-intensity plot, wetland-gain plot, and saved
+GeoPackage.
 
 ## Running Notebook 10
 
@@ -104,7 +109,7 @@ needed.
 
 | Output | Contents |
 |--------|----------|
-| `scenario_summary.parquet` | One representative row per scenario, including status, rule, policy ID, gains, cost, changed-land and agriculture-loss metrics, violation, feasible count, front size, and runtime |
+| `scenario_summary.parquet` | One representative row per scenario, including status, rule, policy ID, gains, cost, net/gross agriculture metrics, violation, feasible count, front size, and runtime |
 | `scenario_comparison.parquet` | Pareto-front metrics for all scenarios, with one `is_representative=True` row per scenario |
 | `scenario_maps/<scenario>.gpkg` | Per-cell action, change intensity, and current/target/delta fractions for the selected representative |
 
@@ -115,10 +120,15 @@ Before treating a run as suitable for comparison, confirm:
 1. Every scenario has at least one feasible solution.
 2. Food Security agriculture loss is no more than `0.03`.
 3. Low Budget changed land is no more than `0.06`.
-4. Wetland Priority produces greater wetland gain than Balanced.
-5. Exactly one Pareto row per scenario is marked as representative.
-6. Representative maps are not all identical.
-7. Protected-cell deltas are zero and wetland deltas are non-negative.
+4. Wetland Priority agriculture gain is no more than `0.05`.
+5. Wetland Priority gross agriculture gain is no more than `0.15`.
+6. Wetland Priority biodiversity and carbon gains are non-negative.
+7. Wetland Priority produces greater wetland gain than Balanced.
+8. Agriculture is the dominant action in less than 20% of Wetland Priority
+   map cells.
+9. Exactly one Pareto row per scenario is marked as representative.
+10. Representative maps are not all identical.
+11. Protected-cell deltas are zero and wetland deltas are non-negative.
 
 The results are decision-support proxies, not calibrated ecological forecasts
 or official planning recommendations.

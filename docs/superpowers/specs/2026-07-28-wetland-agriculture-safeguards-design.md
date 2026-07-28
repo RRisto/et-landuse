@@ -72,12 +72,18 @@ Wetland Priority will explicitly set:
 
 ```python
 config["max_total_agri_gain_pct"] = 0.05
+config["max_gross_agri_gain_pct"] = 0.15
 config["scoring"]["agriculture_gain_cost"] = 10.0
 ```
 
 `max_total_agri_gain_pct` is a hard county-wide net expansion limit. Excess
 above 5% contributes directly to `constraint_penalty`, so feasible-first
 NSGA-II ranks every compliant policy ahead of every policy exceeding the cap.
+
+`max_gross_agri_gain_pct` is a hard 15% limit on summed cell-level
+agriculture increases. It was added after the first safeguard smoke run showed
+that the cost reduced agriculture-labelled cells but did not guarantee the
+approved gross-gain acceptance gate.
 
 `agriculture_gain_cost` applies to gross cell-level agriculture gain. It
 discourages forest or grassland conversion to agriculture and prevents
@@ -89,6 +95,7 @@ The default configuration uses:
 
 ```python
 config["max_total_agri_gain_pct"] = 1.0
+config["max_gross_agri_gain_pct"] = 1.0
 config["scoring"]["agriculture_gain_cost"] = 0.0
 ```
 
