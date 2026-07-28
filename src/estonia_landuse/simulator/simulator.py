@@ -150,6 +150,10 @@ def score_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     # Converting agriculture is expensive (food production loss)
     agriculture_loss = np.clip(-delta[:, 2], 0, None)  # agriculture decrease
     agriculture_penalty = sc.get("agriculture_loss_cost", 2.0) * agriculture_loss
+    agriculture_gain = np.clip(delta[:, 2], 0, None)
+    agriculture_penalty += (
+        sc.get("agriculture_gain_cost", 0.0) * agriculture_gain
+    )
     
     # Hard cap: can't lose more than X% of cell's original agriculture
     max_agri_loss = sc.get("max_agriculture_loss_pct", 0.3)
@@ -218,13 +222,29 @@ def summarize_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     changed_pct = outcomes["change_pct"].mean()
     targets = realize_targets(context, target_fractions, config)
 
-    current_agri_total = context["agriculture_pct"].to_numpy(float).sum()
-    target_agri_total = targets[:, 2].sum()
-    agriculture_loss_pct = (
-        max(0.0, current_agri_total - target_agri_total) / current_agri_total
-        if current_agri_total > 0
-        else 0.0
-    )
+    current_agriculture = context["agriculture_pct"].to_numpy(float)
+    current_agri_total = current_agriculture.sum()
+    agriculture_delta = targets[:, 2] - current_agriculture
+    if current_agri_total > 0:
+        agriculture_loss_pct = (
+            max(0.0, -agriculture_delta.sum()) / current_agri_total
+        )
+        agriculture_gain_pct = (
+            max(0.0, agriculture_delta.sum()) / current_agri_total
+        )
+        gross_agriculture_loss_pct = (
+            np.clip(-agriculture_delta, 0.0, None).sum()
+            / current_agri_total
+        )
+        gross_agriculture_gain_pct = (
+            np.clip(agriculture_delta, 0.0, None).sum()
+            / current_agri_total
+        )
+    else:
+        agriculture_loss_pct = 0.0
+        agriculture_gain_pct = 0.0
+        gross_agriculture_loss_pct = 0.0
+        gross_agriculture_gain_pct = 0.0
 
     current_wetland_total = context["wetland_pct"].to_numpy(float).sum()
     target_wetland_total = targets[:, 1].sum()
@@ -249,10 +269,15 @@ def summarize_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     agri_penalty_weight = config.get("total_agri_loss_penalty_weight", 20.0)
     budget_penalty += excess_agri_loss * agri_penalty_weight
     changed_excess = max(0.0, changed_pct - max_changed)
+    max_total_agri_gain = config.get("max_total_agri_gain_pct", 1.0)
+    agriculture_gain_excess = max(
+        0.0, agriculture_gain_pct - max_total_agri_gain
+    )
     constraint_penalty = (
         outcomes["constraint_penalty"].mean()
         + changed_excess
         + excess_agri_loss
+        + agriculture_gain_excess
     )
     
     return {
@@ -262,5 +287,8 @@ def summarize_policy(context: pd.DataFrame, target_fractions: np.ndarray,
         "constraint_penalty": constraint_penalty,
         "changed_pct": changed_pct,
         "agriculture_loss_pct": agriculture_loss_pct,
+        "agriculture_gain_pct": agriculture_gain_pct,
+        "gross_agriculture_loss_pct": gross_agriculture_loss_pct,
+        "gross_agriculture_gain_pct": gross_agriculture_gain_pct,
         "wetland_gain_pct": wetland_gain_pct,
     }

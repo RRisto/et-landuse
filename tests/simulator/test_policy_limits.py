@@ -93,3 +93,133 @@ def test_policy_exactly_on_limits_remains_feasible(
     )
 
     assert exact["constraint_penalty"] == pytest.approx(0.0, abs=1e-12)
+
+
+def test_summary_distinguishes_net_and_gross_agriculture_change(
+    minimal_context: pd.DataFrame,
+) -> None:
+    context = pd.concat([minimal_context, minimal_context], ignore_index=True)
+    proposal = np.array(
+        [
+            [0.5, 0.1, 0.2, 0.1],
+            [0.2, 0.1, 0.5, 0.1],
+        ]
+    )
+
+    result = summarize_policy(
+        context,
+        proposal,
+        {
+            "carbon_model": "flat",
+            "max_changed_pct": 1.0,
+            "max_total_agri_loss_pct": 1.0,
+            "max_total_agri_gain_pct": 1.0,
+        },
+    )
+
+    assert result["agriculture_loss_pct"] == pytest.approx(0.0)
+    assert result["agriculture_gain_pct"] == pytest.approx(1.0 / 6.0)
+    assert result["gross_agriculture_loss_pct"] == pytest.approx(1.0 / 6.0)
+    assert result["gross_agriculture_gain_pct"] == pytest.approx(1.0 / 3.0)
+
+
+def test_zero_current_agriculture_has_zero_agriculture_percentages(
+    minimal_context: pd.DataFrame,
+) -> None:
+    context = minimal_context.copy()
+    context["forest_pct"] = 0.7
+    context["agriculture_pct"] = 0.0
+    proposal = np.array([[0.7, 0.1, 0.0, 0.1]])
+
+    result = summarize_policy(
+        context,
+        proposal,
+        {"carbon_model": "flat"},
+    )
+
+    assert result["agriculture_loss_pct"] == 0.0
+    assert result["agriculture_gain_pct"] == 0.0
+    assert result["gross_agriculture_loss_pct"] == 0.0
+    assert result["gross_agriculture_gain_pct"] == 0.0
+
+
+def test_gross_agriculture_gain_increases_cost(
+    minimal_context: pd.DataFrame,
+) -> None:
+    proposal = np.array([[0.2, 0.1, 0.5, 0.1]])
+    base = {
+        "carbon_model": "flat",
+        "max_changed_pct": 1.0,
+        "max_total_agri_loss_pct": 1.0,
+        "max_total_agri_gain_pct": 1.0,
+    }
+    free = summarize_policy(
+        minimal_context,
+        proposal,
+        {**base, "scoring": {"agriculture_gain_cost": 0.0}},
+    )
+    priced = summarize_policy(
+        minimal_context,
+        proposal,
+        {**base, "scoring": {"agriculture_gain_cost": 10.0}},
+    )
+
+    assert priced["cost"] - free["cost"] == pytest.approx(2.0)
+
+
+def test_agriculture_expansion_excess_adds_to_constraint_penalty(
+    minimal_context: pd.DataFrame,
+) -> None:
+    proposal = np.array([[0.2, 0.1, 0.5, 0.1]])
+    unrestricted = summarize_policy(
+        minimal_context,
+        proposal,
+        {
+            "carbon_model": "flat",
+            "max_changed_pct": 1.0,
+            "max_total_agri_loss_pct": 1.0,
+            "max_total_agri_gain_pct": 1.0,
+        },
+    )
+    restricted = summarize_policy(
+        minimal_context,
+        proposal,
+        {
+            "carbon_model": "flat",
+            "max_changed_pct": 1.0,
+            "max_total_agri_loss_pct": 1.0,
+            "max_total_agri_gain_pct": 0.05,
+        },
+    )
+
+    assert restricted["constraint_penalty"] == pytest.approx(
+        unrestricted["agriculture_gain_pct"] - 0.05
+    )
+
+
+def test_policy_exactly_on_agriculture_gain_limit_is_feasible(
+    minimal_context: pd.DataFrame,
+) -> None:
+    proposal = np.array([[0.2, 0.1, 0.5, 0.1]])
+    baseline = summarize_policy(
+        minimal_context,
+        proposal,
+        {
+            "carbon_model": "flat",
+            "max_changed_pct": 1.0,
+            "max_total_agri_loss_pct": 1.0,
+            "max_total_agri_gain_pct": 1.0,
+        },
+    )
+    exact = summarize_policy(
+        minimal_context,
+        proposal,
+        {
+            "carbon_model": "flat",
+            "max_changed_pct": 1.0,
+            "max_total_agri_loss_pct": 1.0,
+            "max_total_agri_gain_pct": baseline["agriculture_gain_pct"],
+        },
+    )
+
+    assert exact["constraint_penalty"] == pytest.approx(0.0, abs=1e-12)
