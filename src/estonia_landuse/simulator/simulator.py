@@ -216,6 +216,24 @@ def summarize_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     
     outcomes = score_policy(context, target_fractions, config)
     changed_pct = outcomes["change_pct"].mean()
+    targets = realize_targets(context, target_fractions, config)
+
+    current_agri_total = context["agriculture_pct"].to_numpy(float).sum()
+    target_agri_total = targets[:, 2].sum()
+    agriculture_loss_pct = (
+        max(0.0, current_agri_total - target_agri_total) / current_agri_total
+        if current_agri_total > 0
+        else 0.0
+    )
+
+    current_wetland_total = context["wetland_pct"].to_numpy(float).sum()
+    target_wetland_total = targets[:, 1].sum()
+    wetland_gain_pct = (
+        max(0.0, target_wetland_total - current_wetland_total)
+        / current_wetland_total
+        if current_wetland_total > 0
+        else 0.0
+    )
     
     # Budget penalty
     max_changed = config.get("max_changed_pct", 0.20)
@@ -225,19 +243,24 @@ def summarize_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     # Food security: penalize total agriculture loss across the county
     # Can't reduce total agriculture area by more than max_total_agri_loss_pct
     max_total_agri_loss = config.get("max_total_agri_loss_pct", 0.20)
-    current_agri_total = context["agriculture_pct"].values.sum()
-    if current_agri_total > 0:
-        targets = realize_targets(context, target_fractions, config)
-        target_agri_total = targets[:, 2].sum()  # agriculture is index 2
-        agri_loss_frac = (current_agri_total - target_agri_total) / current_agri_total
-        excess_agri_loss = max(0.0, agri_loss_frac - max_total_agri_loss)
-        agri_penalty_weight = config.get("total_agri_loss_penalty_weight", 20.0)
-        budget_penalty += excess_agri_loss * agri_penalty_weight
+    excess_agri_loss = max(
+        0.0, agriculture_loss_pct - max_total_agri_loss
+    )
+    agri_penalty_weight = config.get("total_agri_loss_penalty_weight", 20.0)
+    budget_penalty += excess_agri_loss * agri_penalty_weight
+    changed_excess = max(0.0, changed_pct - max_changed)
+    constraint_penalty = (
+        outcomes["constraint_penalty"].mean()
+        + changed_excess
+        + excess_agri_loss
+    )
     
     return {
         "biodiversity_gain": outcomes["biodiversity_gain"].mean(),
         "carbon_gain": outcomes["carbon_gain"].mean(),
         "cost": outcomes["cost"].mean() + budget_penalty,
-        "constraint_penalty": outcomes["constraint_penalty"].mean(),
+        "constraint_penalty": constraint_penalty,
         "changed_pct": changed_pct,
+        "agriculture_loss_pct": agriculture_loss_pct,
+        "wetland_gain_pct": wetland_gain_pct,
     }
