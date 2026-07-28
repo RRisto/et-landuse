@@ -192,7 +192,14 @@ def test_scenario_notebook_uses_hard_limits_and_shared_representatives() -> None
         'config["optimization"]["fourth_objective"] = '
         '"wetland_gain_pct"'
     ) in source
+    assert 'config["max_total_agri_gain_pct"] = 0.05' in source
+    assert 'config["scoring"]["agriculture_gain_cost"] = 10.0' in source
     assert 'config["max_total_agri_loss_pct"] = 0.15' in source
     assert "representatives = select_scenario_representatives(" in source
     assert "selected_policies[name]" in source
+    assert (
+        'map_df["wetland_gain"] = np.clip(delta[:, 1], 0, None)'
+        in source
+    )
+    assert '"Wetland Gain per Scenario Representative"' in source
     assert 'pdf["biodiversity_gain"].idxmax()' not in source
