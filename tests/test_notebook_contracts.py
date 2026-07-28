@@ -180,3 +180,19 @@ def test_scenario_notebook_requires_prepared_carbon_predictions() -> None:
     assert "load_model()" not in source
     assert "predict_tco2(" not in source
     assert "GBR failed" not in source
+
+
+def test_scenario_notebook_uses_hard_limits_and_shared_representatives() -> None:
+    source = _source("10_scenario_comparison.ipynb")
+    assert (
+        "from estonia_landuse.scenarios import "
+        "build_scenario_summary, select_scenario_representatives"
+    ) in source
+    assert (
+        'config["optimization"]["fourth_objective"] = '
+        '"wetland_gain_pct"'
+    ) in source
+    assert 'config["max_total_agri_loss_pct"] = 0.15' in source
+    assert "representatives = select_scenario_representatives(" in source
+    assert "selected_policies[name]" in source
+    assert 'pdf["biodiversity_gain"].idxmax()' not in source
