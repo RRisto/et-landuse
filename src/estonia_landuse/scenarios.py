@@ -45,6 +45,7 @@ SELECTION_RULES = {
     "green_maximum",
     "food_security",
     "low_budget",
+    "sustainable_agriculture",
     "wetland_priority",
     "balanced",
 }
@@ -100,6 +101,10 @@ def select_representative(
     carbon = _normalized_loss(candidates["carbon_gain"], maximize=True)
     cost = _normalized_loss(candidates["cost"], maximize=False)
     changed = _normalized_loss(candidates["changed_pct"], maximize=False)
+    agriculture_gain = _normalized_loss(
+        candidates["agriculture_gain_pct"],
+        maximize=True,
+    )
     wetland = _normalized_loss(candidates["wetland_gain_pct"], maximize=True)
 
     if rule == "green_maximum":
@@ -110,6 +115,10 @@ def select_representative(
         score = np.sqrt(bio**2 + carbon**2 + cost**2)
     elif rule == "wetland_priority":
         score = np.sqrt(bio**2 + carbon**2 + cost**2 + wetland**2)
+    elif rule == "sustainable_agriculture":
+        score = np.sqrt(
+            bio**2 + carbon**2 + cost**2 + agriculture_gain**2
+        )
     else:
         score = np.sqrt(bio**2 + carbon**2 + cost**2 + changed**2)
 

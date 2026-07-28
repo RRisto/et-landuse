@@ -192,6 +192,57 @@ def test_wetland_priority_selects_ecological_knee_not_absolute_extreme() -> None
     assert select_representative(frame, "wetland_priority")["id"] == 2
 
 
+def test_sustainable_agriculture_selects_balanced_expansion_knee() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "id": 1,
+                "biodiversity_gain": 0.0,
+                "carbon_gain": 0.0,
+                "cost": 1.0,
+                "changed_pct": 0.15,
+                "agriculture_loss_pct": 0.0,
+                "agriculture_gain_pct": 0.10,
+                "gross_agriculture_loss_pct": 0.0,
+                "gross_agriculture_gain_pct": 0.10,
+                "wetland_gain_pct": 0.0,
+                "constraint_penalty": 0.0,
+            },
+            {
+                "id": 2,
+                "biodiversity_gain": 1.0,
+                "carbon_gain": 1.0,
+                "cost": 0.8,
+                "changed_pct": 0.10,
+                "agriculture_loss_pct": 0.0,
+                "agriculture_gain_pct": 0.05,
+                "gross_agriculture_loss_pct": 0.0,
+                "gross_agriculture_gain_pct": 0.05,
+                "wetland_gain_pct": 0.0,
+                "constraint_penalty": 0.0,
+            },
+            {
+                "id": 3,
+                "biodiversity_gain": 0.6,
+                "carbon_gain": 0.6,
+                "cost": 0.4,
+                "changed_pct": 0.12,
+                "agriculture_loss_pct": 0.0,
+                "agriculture_gain_pct": 0.075,
+                "gross_agriculture_loss_pct": 0.0,
+                "gross_agriculture_gain_pct": 0.075,
+                "wetland_gain_pct": 0.0,
+                "constraint_penalty": 0.0,
+            },
+        ]
+    )
+
+    assert select_representative(
+        frame,
+        "sustainable_agriculture",
+    )["id"] == 3
+
+
 def test_scenario_summary_reports_the_preselected_representative() -> None:
     frames = {
         "balanced": pd.DataFrame(
