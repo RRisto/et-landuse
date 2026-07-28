@@ -153,3 +153,20 @@ def test_modernized_notebook_code_cells_compile(name: str) -> None:
             if not line.lstrip().startswith(("%", "!"))
         )
         compile(python_source, f"{name}:cell-{index}", "exec")
+
+
+def test_spatial_join_predicts_compartments_before_aggregation() -> None:
+    source = _source("09_spatial_join_and_model.ipynb")
+    prediction = (
+        'compartments_with_details["predicted_tco2_ha_yr"] = '
+        "predict_tco2(model, compartments_with_details)"
+    )
+    assert "from carbon_dataset.grid_carbon import aggregate_cell_carbon" in source
+    assert (
+        "from carbon_dataset.forest_carbon_model import "
+        "load_model, predict_tco2"
+    ) in source
+    assert prediction in source
+    assert source.index(prediction) < source.index("overlay = gpd.overlay(")
+    assert "carbon_features = aggregate_cell_carbon(overlay)" in source
+    assert source.count("cell_features = overlay.groupby") == 1
