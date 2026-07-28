@@ -4,6 +4,20 @@ from pathlib import Path
 import pytest
 
 NOTEBOOKS = Path(__file__).parents[1] / "notebooks"
+MODERNIZED_NOTEBOOKS = [
+    "01.1_carbon_dataset.ipynb",
+    "01.2_fetch_rohemeeter.ipynb",
+    "01.3_validate_features_map.ipynb",
+    "01_collect_datasets.ipynb",
+    "02_simulator_and_baselines.ipynb",
+    "03_neuroevolution.ipynb",
+    "03.1_neuroevolution_carbon.ipynb",
+    "03.2_neuroevolution_biodiversity.ipynb",
+    "04_learned_carbon_predictor.ipynb",
+    "05_compare_carbon_models.ipynb",
+    "06_download_forest_registry.ipynb",
+    "07_fetch_forest_details.ipynb",
+]
 
 
 def _source(name: str) -> str:
@@ -100,3 +114,42 @@ def test_learned_carbon_notebook_uses_shared_500m_constants() -> None:
     assert "targets = normalize_targets(context_df, target_fractions)" in source
     assert "CELL_AREA_HA = 100.0" not in source
     assert "target_fractions / tgt_sum * available" not in source
+
+
+@pytest.mark.parametrize("name", MODERNIZED_NOTEBOOKS)
+def test_modernized_notebooks_have_no_stale_outputs(name: str) -> None:
+    document = json.loads((NOTEBOOKS / name).read_text(encoding="utf-8"))
+    for cell in document["cells"]:
+        if cell["cell_type"] == "code":
+            assert cell.get("outputs", []) == []
+            assert cell.get("execution_count") is None
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["01.1_carbon_dataset.ipynb", "01.3_validate_features_map.ipynb"],
+)
+def test_legacy_notebooks_are_labelled(name: str) -> None:
+    document = json.loads((NOTEBOOKS / name).read_text(encoding="utf-8"))
+    markdown = "\n".join(
+        "".join(cell["source"])
+        for cell in document["cells"]
+        if cell["cell_type"] == "markdown"
+    )
+    assert "Legacy 1 km / V1.5 workflow" in markdown
+    assert "Use the 500 m operational pipeline" in markdown
+
+
+@pytest.mark.parametrize("name", MODERNIZED_NOTEBOOKS)
+def test_modernized_notebook_code_cells_compile(name: str) -> None:
+    document = json.loads((NOTEBOOKS / name).read_text(encoding="utf-8"))
+    for index, cell in enumerate(document["cells"]):
+        if cell["cell_type"] != "code":
+            continue
+        source = "".join(cell["source"])
+        python_source = "\n".join(
+            line
+            for line in source.splitlines()
+            if not line.lstrip().startswith(("%", "!"))
+        )
+        compile(python_source, f"{name}:cell-{index}", "exec")
