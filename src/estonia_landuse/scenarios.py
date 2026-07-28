@@ -17,6 +17,9 @@ SUMMARY_COLUMNS = [
     "Cost",
     "Changed land",
     "Agriculture loss",
+    "Agriculture gain",
+    "Gross agriculture loss",
+    "Gross agriculture gain",
     "Wetland gain",
     "Constraint violation",
     "Feasible solutions",
@@ -31,6 +34,9 @@ REQUIRED_METRIC_COLUMNS = [
     "cost",
     "changed_pct",
     "agriculture_loss_pct",
+    "agriculture_gain_pct",
+    "gross_agriculture_loss_pct",
+    "gross_agriculture_gain_pct",
     "wetland_gain_pct",
     "constraint_penalty",
 ]
@@ -103,7 +109,7 @@ def select_representative(
     elif rule == "low_budget":
         score = np.sqrt(bio**2 + carbon**2 + cost**2)
     elif rule == "wetland_priority":
-        score = wetland
+        score = np.sqrt(bio**2 + carbon**2 + cost**2 + wetland**2)
     else:
         score = np.sqrt(bio**2 + carbon**2 + cost**2 + changed**2)
 
@@ -189,6 +195,13 @@ def build_scenario_summary(
                 "Cost": representative["cost"],
                 "Changed land": representative["changed_pct"],
                 "Agriculture loss": representative["agriculture_loss_pct"],
+                "Agriculture gain": representative["agriculture_gain_pct"],
+                "Gross agriculture loss": representative[
+                    "gross_agriculture_loss_pct"
+                ],
+                "Gross agriculture gain": representative[
+                    "gross_agriculture_gain_pct"
+                ],
                 "Wetland gain": representative["wetland_gain_pct"],
                 "Constraint violation": representative["constraint_penalty"],
                 "Feasible solutions": int(annotated["is_feasible"].sum()),
