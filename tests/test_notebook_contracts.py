@@ -66,3 +66,28 @@ def test_biodiversity_scorer_uses_shared_target_realization() -> None:
     assert "targets = realize_targets(context, target_fractions, config)" in source
     assert "target_fractions / target_sum * available_land" not in source
     assert "biodiversity_gain[is_protected] = 0.0" not in source
+
+
+@pytest.mark.parametrize(
+    ("name", "seed_count"),
+    [
+        ("03_neuroevolution.ipynb", 1),
+        ("03.1_neuroevolution_carbon.ipynb", 1),
+        ("03.2_neuroevolution_biodiversity.ipynb", 1),
+        ("05_compare_carbon_models.ipynb", 2),
+        ("10_scenario_comparison.ipynb", 1),
+    ],
+)
+def test_optimizer_runs_have_explicit_seeds(
+    name: str, seed_count: int
+) -> None:
+    assert _source(name).count("seed=42") == seed_count
+
+
+def test_biodiversity_trainer_uses_current_optimizer_interfaces() -> None:
+    source = _source("03.2_neuroevolution_biodiversity.ipynb")
+    assert "rng = np.random.default_rng(seed)" in source
+    assert "rng=rng" in source
+    assert "p.constraint_violation = summary['constraint_penalty']" in source
+    assert "_create_offspring(" in source
+    assert "mutation_factor,\n            rng," in source
