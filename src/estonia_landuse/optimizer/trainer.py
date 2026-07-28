@@ -8,7 +8,15 @@ from ..validation import resolve_rng, validate_context_columns
 from .nsga2 import crowding_distance, fast_non_dominated_sort
 from .prescriptor import Prescriptor
 
-FOURTH_OBJECTIVES = {"changed_pct", "wetland_gain_pct"}
+FOURTH_OBJECTIVES = {
+    "agriculture_gain_pct",
+    "changed_pct",
+    "wetland_gain_pct",
+}
+MAXIMIZED_FOURTH_OBJECTIVES = {
+    "agriculture_gain_pct",
+    "wetland_gain_pct",
+}
 
 
 def _fourth_objective(config: dict | None) -> str:
@@ -29,7 +37,7 @@ def _objective_metrics(
 ) -> tuple[float, float, float, float]:
     objective = _fourth_objective(config)
     fourth = summary[objective]
-    if objective == "wetland_gain_pct":
+    if objective in MAXIMIZED_FOURTH_OBJECTIVES:
         fourth = -fourth
     return (
         -summary["biodiversity_gain"],
@@ -37,6 +45,23 @@ def _objective_metrics(
         summary["cost"],
         fourth,
     )
+
+
+def _fourth_progress(
+    metrics: np.ndarray,
+    config: dict | None,
+) -> tuple[str, float]:
+    """Return the public label and value for the fourth objective."""
+    objective = _fourth_objective(config)
+    labels = {
+        "agriculture_gain_pct": "agriculture_gain",
+        "changed_pct": "change",
+        "wetland_gain_pct": "wetland_gain",
+    }
+    value = float(metrics[3])
+    if objective in MAXIMIZED_FOURTH_OBJECTIVES:
+        value = -value
+    return labels[objective], value
 
 
 def train(
@@ -130,9 +155,14 @@ def train(
         if verbose and (gen + 1) % 10 == 0:
             front0 = [p for p in population if p.rank == 0]
             avg_metrics = np.mean([p.metrics for p in front0], axis=0)
+            fourth_label, fourth_value = _fourth_progress(
+                avg_metrics,
+                config,
+            )
             print(f"Gen {gen+1:>3d} | Front-0: {len(front0):>3d} | "
                   f"Avg: bio={-avg_metrics[0]:.4f} carbon={-avg_metrics[1]:.4f} "
-                  f"cost={avg_metrics[2]:.4f} change={avg_metrics[3]:.1%}")
+                  f"cost={avg_metrics[2]:.4f} "
+                  f"{fourth_label}={fourth_value:.1%}")
     
     population.sort(key=lambda p: (p.rank, -getattr(p, "crowding", 0)))
     return population
