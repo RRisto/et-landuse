@@ -51,3 +51,18 @@ def test_rohemeeter_notebook_uses_isolated_500m_paths() -> None:
     assert "data/processed/rohemeeter_500m" in source
     assert '"--grid-path"' in source
     assert '"--output-dir"' in source
+
+
+def test_baseline_map_uses_shared_target_realization() -> None:
+    source = _source("02_simulator_and_baselines.ipynb")
+    assert "from estonia_landuse.simulator.targets import realize_targets" in source
+    assert "targets_norm = realize_targets(gdf, targets)" in source
+    assert "targets / tgt_sum * available" not in source
+
+
+def test_biodiversity_scorer_uses_shared_target_realization() -> None:
+    source = _source("03.2_neuroevolution_biodiversity.ipynb")
+    assert "from estonia_landuse.simulator.targets import realize_targets" in source
+    assert "targets = realize_targets(context, target_fractions, config)" in source
+    assert "target_fractions / target_sum * available_land" not in source
+    assert "biodiversity_gain[is_protected] = 0.0" not in source
