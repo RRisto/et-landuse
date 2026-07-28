@@ -196,6 +196,21 @@ def test_scenario_notebook_uses_hard_limits_and_shared_representatives() -> None
     assert 'config["max_gross_agri_gain_pct"] = 0.15' in source
     assert 'config["scoring"]["agriculture_gain_cost"] = 10.0' in source
     assert 'config["max_total_agri_loss_pct"] = 0.15' in source
+    assert 'elif scenario_name == "sustainable_agriculture":' in source
+    assert 'config["min_total_agri_gain_pct"] = 0.05' in source
+    assert 'config["max_total_agri_gain_pct"] = 0.10' in source
+    assert 'config["max_gross_agri_loss_pct"] = 0.02' in source
+    assert 'config["min_biodiversity_gain"] = -0.01' in source
+    assert 'config["min_carbon_gain"] = -0.01' in source
+    assert (
+        'config["optimization"]["fourth_objective"] = '
+        '"agriculture_gain_pct"'
+    ) in source
+    assert (
+        '"sustainable_agriculture": "Sustainable Agriculture Expansion"'
+        in source
+    )
+    assert '"sustainable_agriculture": "sustainable_agriculture"' in source
     assert "representatives = select_scenario_representatives(" in source
     assert "selected_policies[name]" in source
     assert (
@@ -203,4 +218,5 @@ def test_scenario_notebook_uses_hard_limits_and_shared_representatives() -> None
         in source
     )
     assert '"Wetland Gain per Scenario Representative"' in source
+    assert 'if len(results) < len(axes_flat):' in source
     assert 'pdf["biodiversity_gain"].idxmax()' not in source
