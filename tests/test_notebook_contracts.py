@@ -91,3 +91,12 @@ def test_biodiversity_trainer_uses_current_optimizer_interfaces() -> None:
     assert "p.constraint_violation = summary['constraint_penalty']" in source
     assert "_create_offspring(" in source
     assert "mutation_factor,\n            rng," in source
+
+
+def test_learned_carbon_notebook_uses_shared_500m_constants() -> None:
+    source = _source("04_learned_carbon_predictor.ipynb")
+    assert "from estonia_landuse.data.constants import CELL_AREA_HA" in source
+    assert "from estonia_landuse.simulator.targets import normalize_targets" in source
+    assert "targets = normalize_targets(context_df, target_fractions)" in source
+    assert "CELL_AREA_HA = 100.0" not in source
+    assert "target_fractions / tgt_sum * available" not in source
