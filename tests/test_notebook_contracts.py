@@ -170,3 +170,13 @@ def test_spatial_join_predicts_compartments_before_aggregation() -> None:
     assert source.index(prediction) < source.index("overlay = gpd.overlay(")
     assert "carbon_features = aggregate_cell_carbon(overlay)" in source
     assert source.count("cell_features = overlay.groupby") == 1
+
+
+def test_scenario_notebook_requires_prepared_carbon_predictions() -> None:
+    source = _source("10_scenario_comparison.ipynb")
+    assert 'if "predicted_tco2_ha_yr" not in features_df.columns:' in source
+    assert "Run notebook 09_spatial_join_and_model.ipynb" in source
+    assert "raise FileNotFoundError" in source
+    assert "load_model()" not in source
+    assert "predict_tco2(" not in source
+    assert "GBR failed" not in source
