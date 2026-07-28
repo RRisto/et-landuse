@@ -1,6 +1,6 @@
 # Notebook 10 Scenario Comparison
 
-Notebook `10_scenario_comparison.ipynb` runs five policy scenarios with
+Notebook `10_scenario_comparison.ipynb` runs six policy scenarios with
 feasible-first NSGA-II, selects one representative policy per scenario, and
 saves comparable metrics and spatial maps.
 
@@ -30,9 +30,9 @@ data. Set it to `True` only when intentionally refreshing a source.
 
 ## Scenario semantics
 
-The percentages below are hard feasibility limits. A policy exceeding either
-limit receives positive `constraint_penalty`; feasible-first NSGA-II ranks
-every feasible policy ahead of every infeasible policy.
+The percentages below are hard feasibility limits. A policy outside a
+configured limit receives positive `constraint_penalty`; feasible-first
+NSGA-II ranks every feasible policy ahead of every infeasible policy.
 
 | Scenario | Maximum changed land | Maximum agriculture loss | Maximum agriculture gain (net/gross) | Fourth objective |
 |----------|---------------------:|-------------------------:|-------------------------:|------------------|
@@ -40,6 +40,7 @@ every feasible policy ahead of every infeasible policy.
 | Food Security | 15% | 3% | No scenario cap | Minimize changed land |
 | Low Budget | 6% | 15% | No scenario cap | Minimize changed land |
 | Wetland Priority | 25% | 15% | 5% / 15% | Maximize wetland gain |
+| Sustainable Agriculture Expansion | 15% | 2% gross | 5–10% net | Maximize agriculture gain |
 | Balanced | 20% | 15% | No scenario cap | Minimize changed land |
 
 All scenarios also maximize biodiversity gain and carbon gain and minimize
@@ -57,6 +58,11 @@ and gain separately sum cell-level decreases and increases, revealing
 relocation that the net metrics can hide. Wetland Priority prices gross
 agriculture expansion and treats net expansion above 5% or gross expansion
 above 15% as infeasible.
+Sustainable Agriculture Expansion requires 5–10% net expansion, permits no
+more than 2% gross agriculture loss, and permits no more than 1% biodiversity
+or carbon loss. It therefore expands total agricultural area without
+achieving the result by extensively removing and relocating existing
+farmland.
 `wetland_gain_pct` is total non-negative wetland increase divided by current
 county-wide wetland. Values are stored as fractions: `0.03` means 3%.
 
@@ -72,6 +78,7 @@ scenario `infeasible`.
 | Food Security | Maximize biodiversity gain |
 | Low Budget | Minimize distance to the normalized biodiversity/carbon/cost ideal |
 | Wetland Priority | Minimize distance to the normalized biodiversity/carbon/cost/wetland ideal |
+| Sustainable Agriculture Expansion | Minimize distance to the normalized agriculture/biodiversity/carbon/cost ideal |
 | Balanced | Minimize distance to the normalized biodiversity/carbon/cost/changed-land ideal |
 
 Ties are deterministic: lower cost, then lower changed land, then lower stable
@@ -96,7 +103,7 @@ POP_SIZE = 200
 N_GENERATIONS = 200
 ```
 
-The five-scenario full run can take hours. For a smoke test, work on a
+The six-scenario full run can take hours. For a smoke test, work on a
 temporary notebook copy and reduce both values; do not commit smoke settings or
 overwrite reviewed full-run results accidentally.
 
@@ -126,9 +133,14 @@ Before treating a run as suitable for comparison, confirm:
 7. Wetland Priority produces greater wetland gain than Balanced.
 8. Agriculture is the dominant action in less than 20% of Wetland Priority
    map cells.
-9. Exactly one Pareto row per scenario is marked as representative.
-10. Representative maps are not all identical.
-11. Protected-cell deltas are zero and wetland deltas are non-negative.
+9. Sustainable Agriculture Expansion has 5–10% net agriculture gain.
+10. Sustainable Agriculture Expansion has no more than 2% gross agriculture
+    loss and no more than 15% changed land.
+11. Sustainable Agriculture Expansion biodiversity and carbon gains are each
+    at least `-0.01`.
+12. Exactly one Pareto row per scenario is marked as representative.
+13. Representative maps are not all identical.
+14. Protected-cell deltas are zero and wetland deltas are non-negative.
 
 The results are decision-support proxies, not calibrated ecological forecasts
 or official planning recommendations.

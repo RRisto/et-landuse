@@ -328,7 +328,7 @@ The NIR model dominates the flat model in cross-evaluation:
 
 ## Policy Scenario Comparison (Notebook 10)
 
-Five scenarios explore how hard policy limits and selection priorities shape
+Six scenarios explore how hard policy limits and selection priorities shape
 trade-offs:
 
 | Scenario | Maximum changed land | Maximum agriculture loss | Maximum agriculture gain (net/gross) | Representative |
@@ -337,6 +337,7 @@ trade-offs:
 | **Food Security** | 15% | 3% | No scenario cap | Highest biodiversity among feasible policies |
 | **Low Budget** | 6% | 15% | No scenario cap | Normalized biodiversity/carbon/cost knee |
 | **Wetland Priority** | 25% | 15% | 5% / 15% | Normalized biodiversity/carbon/cost/wetland knee |
+| **Sustainable Agriculture Expansion** | 15% | 2% gross | 5–10% net | Normalized agriculture/biodiversity/carbon/cost knee |
 | **Balanced** | 20% | 15% | No scenario cap | Normalized biodiversity/carbon/cost/change knee |
 
 All scenarios use the learned carbon model and prepared grid-cell predictions.
@@ -344,7 +345,9 @@ Changed-land and agriculture-loss excess are hard feasibility violations.
 Wetland Priority replaces changed-land minimization with wetland-gain
 maximization as the fourth objective, caps net agriculture expansion at 5%
 and gross expansion at 15%, and prices gross agriculture expansion. Other
-scenarios minimize changed land.
+existing scenarios minimize changed land. Sustainable Agriculture Expansion
+instead maximizes net agriculture gain, requires 5–10% expansion, caps gross
+agriculture loss at 2%, and limits biodiversity and carbon loss to 1% each.
 
 Notebook 10 selects one representative per scenario and reuses that exact
 policy in the summary, plots, and saved GeoPackages. A dedicated wetland-gain
