@@ -8,6 +8,36 @@ from ..validation import resolve_rng, validate_context_columns
 from .nsga2 import crowding_distance, fast_non_dominated_sort
 from .prescriptor import Prescriptor
 
+FOURTH_OBJECTIVES = {"changed_pct", "wetland_gain_pct"}
+
+
+def _fourth_objective(config: dict | None) -> str:
+    config = {} if config is None else config
+    objective = config.get("optimization", {}).get(
+        "fourth_objective", "changed_pct"
+    )
+    if objective not in FOURTH_OBJECTIVES:
+        choices = ", ".join(sorted(FOURTH_OBJECTIVES))
+        raise ValueError(
+            f"unsupported fourth objective {objective!r}; choose from {choices}"
+        )
+    return objective
+
+
+def _objective_metrics(
+    summary: dict, config: dict | None
+) -> tuple[float, float, float, float]:
+    objective = _fourth_objective(config)
+    fourth = summary[objective]
+    if objective == "wetland_gain_pct":
+        fourth = -fourth
+    return (
+        -summary["biodiversity_gain"],
+        -summary["carbon_gain"],
+        summary["cost"],
+        fourth,
+    )
+
 
 def train(
     context: pd.DataFrame,
@@ -49,6 +79,7 @@ def train(
     if hidden_size < 1:
         raise ValueError("hidden_size must be positive")
     validate_context_columns(context, feature_columns)
+    _fourth_objective(config)
     rng = resolve_rng(seed=seed, rng=rng)
     
     in_size = len(feature_columns)
@@ -113,13 +144,8 @@ def _evaluate_population(population, features_norm, context, config):
         target_fractions = p.prescribe(features_norm)
         summary = summarize_policy(context, target_fractions, config)
         
-        # NSGA-II minimizes all objectives
-        p.metrics = (
-            -summary["biodiversity_gain"],
-            -summary["carbon_gain"],
-            summary["cost"],
-            summary["changed_pct"],
-        )
+        # NSGA-II minimizes all objectives.
+        p.metrics = _objective_metrics(summary, config)
         p.constraint_violation = summary["constraint_penalty"]
 
 
