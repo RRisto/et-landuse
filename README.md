@@ -8,10 +8,10 @@ Explores spatial policy trade-offs between biodiversity, carbon sequestration, h
 
 ## How it works
 
-1. A **prescriptor** neural network recommends target land-use fractions per 1 km grid cell
+1. A **prescriptor** neural network recommends target land-use fractions per 500 m grid cell
 2. A **simulator** scores the transition from current to target land use on multiple objectives
-3. **NSGA-II** evolves a population of prescriptors to find Pareto-optimal trade-off policies
-4. A notebook visualizes results on interactive maps
+3. Feasible-first **NSGA-II** evolves a population of prescriptors to find Pareto-optimal trade-off policies
+4. Notebooks compare objectives, select scenario representatives, and save spatial policy maps
 
 ## Actions
 
@@ -24,10 +24,13 @@ Explores spatial policy trade-offs between biodiversity, carbon sequestration, h
 
 ## Objectives
 
-- Maximize biodiversity proxy
-- Maximize carbon proxy (V1.5: spatially-informed)
-- Maximize habitat connectivity
-- Minimize intervention cost and constraint violations
+- Maximize biodiversity gain, including a protected-area connectivity bonus
+- Maximize carbon gain using the selected flat, NIR, or learned model
+- Minimize intervention cost
+- Minimize changed land; Wetland Priority instead maximizes wetland gain
+
+Physical and scenario-specific policy limits are handled as feasibility
+constraints, not as objectives that can be traded away.
 
 ## Quick start
 
@@ -51,9 +54,18 @@ uv run jupyter lab
 # 06    — Download forest registry compartment geometries
 # 07    — Fetch detailed forest attributes (parallel)
 # 08    — Train GBR carbon predictor from real data
-# 09    — Spatial join + full model comparison + maps
-# 10    — Policy scenario comparison (5 scenarios, full Pareto analysis)
+# 09    — Predict compartment carbon, then aggregate predictions to the 500m grid
+# 10    — Compare 5 constrained policy scenarios and save representative maps
 ```
+
+Remote-data notebooks set `ALLOW_DOWNLOADS = False` by default. Existing local
+files are reused unless you explicitly enable a refresh. Notebook 10 performs
+no downloads and requires the prepared
+`data/processed/learned_carbon/features_with_forest.parquet` produced by
+Notebook 09.
+
+See [docs/scenario-comparison.md](docs/scenario-comparison.md) before running
+Notebook 10 or interpreting its outputs.
 
 ### Installation profiles
 
@@ -93,20 +105,23 @@ population = train(
 Each prescriptor exposes `constraint_violation`. NSGA-II uses feasible-first
 selection: every policy with zero constraint violation outranks every
 infeasible policy. Feasible policies are then compared using biodiversity,
-carbon, cost, and changed area. Among infeasible policies, lower total
-violation ranks first.
+carbon, cost, and the configured fourth objective. The default fourth objective
+minimizes changed area; Wetland Priority maximizes wetland gain. Among
+infeasible policies, lower total violation ranks first.
 
 Use `estonia_landuse.scenarios.annotate_feasibility` and
-`build_scenario_summary` when preparing scenario reports so infeasible results
-remain visible and clearly labeled.
+`select_scenario_representatives` before `build_scenario_summary` when
+preparing scenario reports. The same selected policy must be reused for the
+summary and all maps so they describe one consistent representative.
 
 ### Reusing local Rohemeeter data
 
-Rohemeeter collection is expensive and can take a long time. Before running
-`src/carbon_dataset/09_fetch_rohemeeter.py` or its notebook, reuse existing
-files under `data/processed/` and any saved progress output. The repository
-ignores `data/`, so local artifacts can be shared between branches or
-worktrees without committing or downloading them again.
+Rohemeeter collection is expensive and can take a long time. Notebook
+`01.2_fetch_rohemeeter.ipynb` reuses existing files under `data/processed/`
+and saved progress output by default. Set `ALLOW_DOWNLOADS = True` only when
+you intentionally want to refresh those data. The repository ignores `data/`,
+so local artifacts can be shared between branches or worktrees without
+committing or downloading them again.
 
 ## Interactive visualizer
 
@@ -263,8 +278,12 @@ Uses real compartment-level data from the Estonian Forest Registry (metsaregiste
 
 1. **Download geometries** via public WFS at `gsavalik.envir.ee/geoserver/mr_portaal/wfs` (CC-BY 4.0)
 2. **Fetch detailed attributes** via REST API at `register.metsad.ee/portaal/api/rest/eraldis/detail/{id}`
-3. **Spatial join** compartment features to the 1km grid (area-weighted)
-4. **Train GBR** to predict tCO2/ha/yr from (species, age, site class, drainage, height)
+3. **Train GBR** to predict tCO2/ha/yr from species, age, site class, drainage, and height
+4. **Predict each forest compartment** before spatial aggregation
+5. **Overlay and area-weight** compartment predictions onto the 500 m grid
+
+Steps 1 and 2 are guarded by `ALLOW_DOWNLOADS = False` and reuse existing
+local files by default.
 
 ### Conversion formula
 
@@ -309,17 +328,26 @@ The NIR model dominates the flat model in cross-evaluation:
 
 ## Policy Scenario Comparison (Notebook 10)
 
-Five scenarios explore how different policy priorities shape trade-offs:
+Five scenarios explore how hard policy limits and selection priorities shape
+trade-offs:
 
-| Scenario | Key difference |
-|----------|---------------|
-| **Green Maximum** | Low agriculture protection, high carbon/bio weights — max ecological gain |
-| **Food Security** | High agriculture preservation (max 5% loss), expensive to convert farmland |
-| **Low Budget** | Max 10% land change, high intervention cost — what's achievable cheaply? |
-| **Wetland Priority** | Lower suitability threshold, higher biodiversity value for wetland |
-| **Balanced** | Default constraints — middle ground |
+| Scenario | Maximum changed land | Maximum agriculture loss | Representative |
+|----------|---------------------:|-------------------------:|----------------|
+| **Green Maximum** | 40% | 50% | Highest normalized biodiversity + carbon |
+| **Food Security** | 15% | 3% | Highest biodiversity among feasible policies |
+| **Low Budget** | 6% | 15% | Normalized biodiversity/carbon/cost knee |
+| **Wetland Priority** | 25% | 15% | Highest wetland gain |
+| **Balanced** | 20% | 15% | Normalized biodiversity/carbon/cost/change knee |
 
-All scenarios use the learned carbon model and pre-computed GBR predictions.
+All scenarios use the learned carbon model and prepared grid-cell predictions.
+Changed-land and agriculture-loss excess are hard feasibility violations.
+Wetland Priority replaces changed-land minimization with wetland-gain
+maximization as the fourth objective. Other scenarios minimize changed land.
+
+Notebook 10 selects one representative per scenario and reuses that exact
+policy in the summary, plots, and saved GeoPackages. See
+[docs/scenario-comparison.md](docs/scenario-comparison.md) for prerequisites,
+outputs, and interpretation guidance.
 
 ## Grid Resolution
 
