@@ -273,11 +273,16 @@ def summarize_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     agriculture_gain_excess = max(
         0.0, agriculture_gain_pct - max_total_agri_gain
     )
+    max_gross_agri_gain = config.get("max_gross_agri_gain_pct", 1.0)
+    gross_agriculture_gain_excess = max(
+        0.0, gross_agriculture_gain_pct - max_gross_agri_gain
+    )
     constraint_penalty = (
         outcomes["constraint_penalty"].mean()
         + changed_excess
         + excess_agri_loss
         + agriculture_gain_excess
+        + gross_agriculture_gain_excess
     )
     
     return {

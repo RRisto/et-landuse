@@ -76,5 +76,6 @@ def default_config() -> dict:
         # Food security: max 15% total agriculture loss county-wide
         "max_total_agri_loss_pct": 0.15,
         "max_total_agri_gain_pct": 1.0,
+        "max_gross_agri_gain_pct": 1.0,
         "total_agri_loss_penalty_weight": 20.0,
     }

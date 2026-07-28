@@ -193,6 +193,7 @@ def test_scenario_notebook_uses_hard_limits_and_shared_representatives() -> None
         '"wetland_gain_pct"'
     ) in source
     assert 'config["max_total_agri_gain_pct"] = 0.05' in source
+    assert 'config["max_gross_agri_gain_pct"] = 0.15' in source
     assert 'config["scoring"]["agriculture_gain_cost"] = 10.0' in source
     assert 'config["max_total_agri_loss_pct"] = 0.15' in source
     assert "representatives = select_scenario_representatives(" in source
