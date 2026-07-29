@@ -24,6 +24,29 @@ Run Notebook 09 again only when the trained model, compartment details, grid,
 or other upstream features have changed. If the prepared parquet already
 contains the current predictions, Notebook 10 can run directly.
 
+## Data provenance by simulation aspect
+
+Notebook 10 uses the prepared per-cell feature table rather than contacting
+external services. The following sources created those inputs upstream.
+
+| Simulation aspect | Prepared fields or inputs | Upstream source | Role in the simulation |
+|---|---|---|---|
+| Grid and population | `cell_id`, `TOTAL_24` | Statistics Estonia 1 km population grid, subdivided to the project's 500 m grid | Defines analysis cells; population contributes to opportunity cost and wetland-restoration restrictions. |
+| Current land use | `forest_pct`, `wetland_pct`, `agriculture_pct`, `grassland_pct`, `urban_pct`, `water_pct` | CORINE Land Cover 2018 | Starting land shares; urban and water shares are fixed. |
+| Protected areas | `protected_overlap_pct` | EELIS WFS | Blocks change in heavily protected cells and contributes to the biodiversity connectivity bonus. |
+| Roads and buildings | `road_density_km`, `building_count` | OpenStreetMap, distributed through Geofabrik | Helps derive wetland suitability and opportunity cost. |
+| Peat and wetland context | `peat_overlap_pct` and wetland-restoration inputs | Maa-amet maardlad WFS and associated Estonian peat/wetland layers | Selects peat-sensitive non-forest carbon factors and supports restoration suitability. |
+| Forest carbon | `predicted_tco2_ha_yr` | Estonian Forest Registry (metsaregister) compartment geometries and attributes, processed by Notebook 09's learned predictor | Cell-specific forest carbon rate. Missing values use the documented 3.8 tCO2/ha/yr fallback. |
+| Non-forest carbon | Land-use transitions plus peat overlap | Estonia NIR 2024 and IPCC transition-factor tables | Estimates wetland, agriculture, and grassland transition effects; these are emission-factor assumptions, not a second observed dataset. |
+| Prescriptor context | `naturalness_score`, `carbon_score`, `biodiversity_proxy`, `opportunity_cost_proxy`, `rohemeeter_norm` | Derived from the sources above; `rohemeeter_norm` comes from Rohemeeter biodiversity scores | Inputs used by the neural prescriptor to choose target land shares. |
+
+Rohemeeter is decision context rather than a direct biodiversity-outcome
+measurement. The biodiversity objective is calculated from land-use change,
+wetland suitability, protected-area connectivity, and configured land-group
+values. Likewise, agriculture metrics describe agricultural land area only:
+the model has no crop yield, soil fertility, farm-profit, food-demand, or
+calorie-production data.
+
 Remote-data notebooks use `ALLOW_DOWNLOADS = False` by default. Leave this
 flag unchanged to reuse local Forest Registry, Rohemeeter, and other prepared
 data. Set it to `True` only when intentionally refreshing a source.
