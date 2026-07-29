@@ -87,7 +87,9 @@ Sustainable Agriculture Expansion requires 5–10% net expansion, permits no
 more than 2% gross agriculture loss, and permits no more than 1% biodiversity
 or carbon loss. It therefore expands total agricultural area without
 achieving the result by extensively removing and relocating existing
-farmland.
+farmland. Agriculture expansion has a moderate additional cost coefficient
+of 0.3; Wetland Priority retains its stronger coefficient of 10.0 to prevent
+rewetting from being achieved mainly through farmland expansion.
 `wetland_gain_pct` is total non-negative wetland increase divided by current
 county-wide wetland. Values are stored as fractions: `0.03` means 3%.
 

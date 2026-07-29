@@ -50,7 +50,7 @@ def default_config() -> dict:
             "connectivity_bonus": 0.2,
             "base_change_cost": 0.3,
             "agriculture_loss_cost": 2.0,        # heavy cost for losing farmland (food security)
-            "agriculture_gain_cost": 0.0,        # optional cost for expanding farmland
+            "agriculture_gain_cost": 0.3,        # moderate extra cost for expanding farmland
             "max_agriculture_loss_pct": 0.3,     # can't lose more than 30% of a cell's agriculture
         },
 

@@ -2,7 +2,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from estonia_landuse.simulator.config import default_config
 from estonia_landuse.simulator.simulator import summarize_policy
+
+
+def test_default_config_prices_agriculture_expansion() -> None:
+    assert default_config()["scoring"]["agriculture_gain_cost"] == 0.3
 
 
 def test_summary_reports_county_agriculture_loss_and_wetland_gain(
