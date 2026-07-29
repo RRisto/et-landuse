@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="et">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Eesti maakasutuse stsenaariumide tulemuste võrdlus.">
+  <title>Maakasutuse stsenaariumide tulemused</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="dashboard">
+    <header class="hero">
+      <p class="eyebrow">EESTI MAAKASUTUSE OTSUSTUSTUGI</p>
+      <h1>Maakasutuse stsenaariumide tulemused</h1>
+      <p>Võrdle elurikkuse, süsiniku, sekkumise kulu ja maakasutuse muutuse kompromisse.</p>
+    </header>
+
+    <section class="control-panel" aria-label="Stsenaariumi valik">
+      <div>
+        <label for="scenario-selector">Vali stsenaarium</label>
+        <select id="scenario-selector"></select>
+      </div>
+      <p id="scenario-description" class="control-note"></p>
+    </section>
+
+    <section aria-labelledby="metrics-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">VALITUD STSENAARIUM</p>
+          <h2 id="metrics-title">Tulemuste kokkuvõte</h2>
+        </div>
+        <span id="scenario-status" class="status"></span>
+      </div>
+      <div id="metric-cards" class="metric-grid" aria-live="polite"></div>
+    </section>
+
+    <section class="map-panel" aria-labelledby="map-title">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">RUUMILINE VAADE</p>
+          <h2 id="map-title">500 m ruutude soovitus</h2>
+        </div>
+        <label for="map-layer">Kaardikiht
+          <select id="map-layer">
+            <option value="action">Domineeriv tegevus</option>
+            <option value="change_intensity">Muutuse intensiivsus</option>
+            <option value="delta_wetland">Märgala muutus</option>
+            <option value="delta_forest">Metsa muutus</option>
+            <option value="delta_agriculture">Põllumajandusmaa muutus</option>
+          </select>
+        </label>
+      </div>
+      <canvas id="scenario-map" aria-label="Valitud stsenaariumi 500 meetri ruutude kaart"></canvas>
+      <div id="map-legend" class="map-legend"></div>
+    </section>
+
+    <section class="comparison" aria-labelledby="comparison-title">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">KÕIK STSENAARIUMID</p>
+          <h2 id="comparison-title">Stsenaariumide võrdlus</h2>
+        </div>
+        <label for="comparison-metric">Diagrammi näitaja
+          <select id="comparison-metric">
+            <option value="Biodiversity gain">Elurikkuse kasv</option>
+            <option value="Carbon gain">Süsinikukasu</option>
+            <option value="Cost">Sekkumise kulu</option>
+            <option value="Changed land">Muutunud maa osakaal</option>
+            <option value="Wetland gain">Märgala kasv</option>
+          </select>
+        </label>
+      </div>
+      <canvas id="comparison-chart" aria-label="Stsenaariumide võrdlusdiagramm"></canvas>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Stsenaarium</th>
+              <th>Elurikkuse kasv</th>
+              <th>Süsinikukasu</th>
+              <th>Sekkumise kulu</th>
+              <th>Muutunud maa</th>
+              <th>Põllumaa muutus</th>
+              <th>Märgala kasv</th>
+            </tr>
+          </thead>
+          <tbody id="comparison-table"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <aside class="method-note">
+      <strong>Tõlgendamine.</strong> Elurikkuse ja sekkumise kulu on mudeli indeksid:
+      need ei ole liikide arvukuse mõõtmine ega eurodes eelarve. Põllumajandus- ja
+      märgalanäitajad väljendavad maakasutuse pindala muutust.
+    </aside>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

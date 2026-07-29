@@ -74,3 +74,14 @@ def test_build_dashboard_payload_contains_summary_and_all_scenario_maps(tmp_path
         "delta_agriculture": 0.0,
         "delta_grassland": 0.0,
     }
+
+
+def test_dashboard_page_exposes_scenario_and_map_controls() -> None:
+    html = (DASHBOARD_DIR / "index.html").read_text(encoding="utf-8")
+    script = (DASHBOARD_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="scenario-selector"' in html
+    assert 'id="map-layer"' in html
+    assert "Stsenaariumide võrdlus" in html
+    assert "function selectScenario" in script
+    assert "function drawMap" in script
