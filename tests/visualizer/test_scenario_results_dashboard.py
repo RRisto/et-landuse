@@ -85,3 +85,11 @@ def test_dashboard_page_exposes_scenario_and_map_controls() -> None:
     assert "Stsenaariumide võrdlus" in html
     assert "function selectScenario" in script
     assert "function drawMap" in script
+
+
+def test_dashboard_readme_explains_generation_and_upload() -> None:
+    readme = (DASHBOARD_DIR / "README.md").read_text(encoding="utf-8")
+
+    assert "scenario-results.json" in readme
+    assert "staatiline veebimajutus" in readme
+    assert "andmeid alla" in readme
