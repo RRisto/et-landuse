@@ -230,7 +230,7 @@ def test_scenario_notebook_uses_hard_limits_and_shared_representatives() -> None
         in source
     )
     assert '"Wetland Gain per Scenario Representative"' in source
-    assert 'if len(results) < len(axes_flat):' in source
+    assert 'for ax in axes_flat[len(results):]:' in source
     assert 'pdf["biodiversity_gain"].idxmax()' not in source
 
 
@@ -261,12 +261,28 @@ def test_scenario_pareto_plot_supports_sustainable_agriculture() -> None:
         "plt": plt,
     }
 
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            message="FigureCanvasAgg is non-interactive",
-            category=UserWarning,
-        )
-        exec(_cell_source("10_scenario_comparison.ipynb", "55f27084"), namespace)
+    try:
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="FigureCanvasAgg is non-interactive",
+                category=UserWarning,
+            )
+            exec(
+                _cell_source("10_scenario_comparison.ipynb", "55f27084"),
+                namespace,
+            )
 
-    plt.close("all")
+        assert plt.get_fignums() == []
+    finally:
+        plt.close("all")
+
+
+def test_scenario_map_plots_scale_to_all_scenarios_and_close_figures() -> None:
+    """Scenario-map figures must not silently omit scenarios or retain memory."""
+    for cell_id in ("82bd21fc", "93795ee0", "cfaf92a4-4451-49b0-bea8-2dbdaea14fbd"):
+        source = _cell_source("10_scenario_comparison.ipynb", cell_id)
+
+        assert "n_rows = int(np.ceil(len(results) / n_cols))" in source
+        assert "if idx >= 6:" not in source
+        assert "plt.close(fig)" in source
