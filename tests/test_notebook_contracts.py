@@ -1,6 +1,9 @@
 import json
+import warnings
 from pathlib import Path
 
+import matplotlib
+import pandas as pd
 import pytest
 
 NOTEBOOKS = Path(__file__).parents[1] / "notebooks"
@@ -26,6 +29,15 @@ def _source(name: str) -> str:
         "".join(cell.get("source", []))
         for cell in notebook["cells"]
         if cell["cell_type"] == "code"
+    )
+
+
+def _cell_source(name: str, cell_id: str) -> str:
+    notebook = json.loads((NOTEBOOKS / name).read_text(encoding="utf-8"))
+    return next(
+        "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+        if cell.get("id") == cell_id
     )
 
 
@@ -220,3 +232,41 @@ def test_scenario_notebook_uses_hard_limits_and_shared_representatives() -> None
     assert '"Wetland Gain per Scenario Representative"' in source
     assert 'if len(results) < len(axes_flat):' in source
     assert 'pdf["biodiversity_gain"].idxmax()' not in source
+
+
+def test_scenario_pareto_plot_supports_sustainable_agriculture() -> None:
+    """The sixth scenario must have styles for every Pareto scatter plot."""
+    matplotlib.use("Agg", force=True)
+    import matplotlib.pyplot as plt
+
+    scenarios = {
+        "green_maximum": "Green Maximum",
+        "food_security": "Food Security",
+        "low_budget": "Low Budget",
+        "wetland_priority": "Wetland Priority",
+        "sustainable_agriculture": "Sustainable Agriculture Expansion",
+        "balanced": "Balanced",
+    }
+    frame = pd.DataFrame(
+        {
+            "carbon_gain": [0.1],
+            "biodiversity_gain": [0.1],
+            "cost": [0.1],
+            "changed_pct": [0.1],
+        }
+    )
+    namespace = {
+        "SCENARIOS": scenarios,
+        "pareto_dfs": {name: frame for name in scenarios},
+        "plt": plt,
+    }
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="FigureCanvasAgg is non-interactive",
+            category=UserWarning,
+        )
+        exec(_cell_source("10_scenario_comparison.ipynb", "55f27084"), namespace)
+
+    plt.close("all")
