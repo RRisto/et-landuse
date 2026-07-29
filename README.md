@@ -24,7 +24,8 @@ Explores spatial policy trade-offs between biodiversity, carbon sequestration, h
 
 ## Objectives
 
-- Maximize biodiversity gain, including a protected-area connectivity bonus
+- Maximize biodiversity gain, including a protected-area connectivity bonus for
+  forest, wetland, and grassland gains (not agricultural expansion)
 - Maximize carbon gain using the selected flat, NIR, or learned model
 - Minimize intervention cost
 - Minimize changed land; Wetland Priority instead maximizes wetland gain

@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from estonia_landuse.simulator.carbon_nir import score_carbon_nir
 from estonia_landuse.simulator.simulator import score_policy
@@ -121,3 +122,21 @@ def test_realize_targets_caps_wetland_gain_by_suitability(
     np.testing.assert_allclose(realized[:, 1], [0.1, 0.25])
     np.testing.assert_allclose(realized.sum(axis=1), current_total)
     np.testing.assert_allclose(outcomes["constraint_penalty"], 0.0)
+
+
+def test_protected_area_bonus_excludes_agriculture_expansion(
+    minimal_context: pd.DataFrame,
+) -> None:
+    """Agriculture expansion must not receive the ecological connectivity bonus."""
+    context = minimal_context.copy()
+    context["protected_overlap_pct"] = 0.10
+    context[["forest_pct", "wetland_pct", "agriculture_pct", "grassland_pct"]] = [
+        [0.20, 0.10, 0.20, 0.40]
+    ]
+    target = np.array([[0.20, 0.10, 0.40, 0.20]])
+
+    outcome = score_policy(context, target, {"carbon_model": "flat"})
+
+    # The biodiversity effect is only the land-use-value change:
+    # +0.20 agriculture * 0.2 - 0.20 grassland * 0.6 = -0.08.
+    assert outcome.loc[0, "biodiversity_gain"] == pytest.approx(-0.08)

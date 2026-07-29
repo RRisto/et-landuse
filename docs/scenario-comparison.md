@@ -33,7 +33,7 @@ external services. The following sources created those inputs upstream.
 |---|---|---|---|
 | Grid and population | `cell_id`, `TOTAL_24` | Statistics Estonia 1 km population grid, subdivided to the project's 500 m grid | Defines analysis cells; population contributes to opportunity cost and wetland-restoration restrictions. |
 | Current land use | `forest_pct`, `wetland_pct`, `agriculture_pct`, `grassland_pct`, `urban_pct`, `water_pct` | CORINE Land Cover 2018 | Starting land shares; urban and water shares are fixed. |
-| Protected areas | `protected_overlap_pct` | EELIS WFS | Blocks change in heavily protected cells and contributes to the biodiversity connectivity bonus. |
+| Protected areas | `protected_overlap_pct` | EELIS WFS | Blocks change in heavily protected cells and adds a biodiversity bonus only to forest, wetland, and grassland gains in partly overlapping cells. |
 | Roads and buildings | `road_density_km`, `building_count` | OpenStreetMap, distributed through Geofabrik | Helps derive wetland suitability and opportunity cost. |
 | Peat and wetland context | `peat_overlap_pct` and wetland-restoration inputs | Maa-amet maardlad WFS and associated Estonian peat/wetland layers | Selects peat-sensitive non-forest carbon factors and supports restoration suitability. |
 | Forest carbon | `predicted_tco2_ha_yr` | Estonian Forest Registry (metsaregister) compartment geometries and attributes, processed by Notebook 09's learned predictor | Cell-specific forest carbon rate. Missing values use the documented 3.8 tCO2/ha/yr fallback. |
@@ -42,8 +42,10 @@ external services. The following sources created those inputs upstream.
 
 Rohemeeter is decision context rather than a direct biodiversity-outcome
 measurement. The biodiversity objective is calculated from land-use change,
-wetland suitability, protected-area connectivity, and configured land-group
-values. Likewise, agriculture metrics describe agricultural land area only:
+wetland suitability, a protected-area overlap proxy, and configured land-group
+values. The overlap proxy rewards forest, wetland, and grassland gains, not
+agricultural expansion; it is not a graph-based habitat-corridor analysis.
+Likewise, agriculture metrics describe agricultural land area only:
 the model has no crop yield, soil fertility, farm-profit, food-demand, or
 calorie-production data.
 

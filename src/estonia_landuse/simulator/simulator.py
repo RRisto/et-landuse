@@ -138,9 +138,15 @@ def score_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     biodiversity_gain -= wetland_gain_raw * biodiversity_value[1]
     biodiversity_gain += wetland_gain_raw * biodiversity_value[1] * wetland_suit
 
-    # Bonus for increasing land near protected areas
+    # Reward natural and semi-natural land gains in cells partly overlapping
+    # protected areas. Agriculture expansion is deliberately excluded: it does
+    # not improve ecological connectivity.
     protected = context["protected_overlap_pct"].values
-    biodiversity_gain += sc.get("connectivity_bonus", 0.2) * change_pct * protected
+    natural_gain_pct = np.clip(delta[:, [0, 1, 3]], 0, None).sum(axis=1)
+    natural_gain_pct /= np.where(available_land > 0, available_land, 1.0)
+    biodiversity_gain += (
+        sc.get("connectivity_bonus", 0.2) * natural_gain_pct * protected
+    )
     
     # --- Cost ---
     # Cost of change depends on: amount changed, opportunity cost, and what you're converting
