@@ -124,26 +124,20 @@ you intentionally want to refresh those data. The repository ignores `data/`,
 so local artifacts can be shared between branches or worktrees without
 committing or downloading them again.
 
-## Interactive visualizer
+## Scenario results dashboard
 
-A standalone HTML/JS app for exploring land-use scenarios without running Python.
+A standalone Estonian HTML/JS dashboard for viewing the completed Notebook 10
+scenario results. Generate its data from existing local outputs, without
+downloading data or running the optimisation again:
 
-```bash
-# Generate the grid GeoJSON (one-time, after processing data)
-uv run python visualizer/export_geojson.py
-
-# Serve locally (browsers block fetch on file://)
-python -m http.server 8000 -d visualizer
-
-# Open http://localhost:8000
+```powershell
+.\.venv\Scripts\python.exe visualizer\scenario_results\export_dashboard_data.py
 ```
 
-Features:
-- **Action map:** cells colored by assigned action, updates live with sliders
-- **Biodiversity map:** Rohemeeter scores (RdYlGn colormap)
-- **Metric cards:** CO₂ sequestration, cost, biodiversity, area, cost efficiency — all with confidence intervals
-- **Preset scenarios:** Balanced, Max Forest, Restore Wetland, Protect Only
-- **Click any cell** for popup with detailed properties
+Then serve or upload the complete `visualizer/scenario_results/` directory,
+including `data/scenario-results.json`. See
+[`visualizer/scenario_results/README.md`](visualizer/scenario_results/README.md)
+for the upload structure and interpretation notes.
 
 ## Project structure
 
