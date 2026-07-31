@@ -21,9 +21,30 @@ from estonia_landuse.simulator.features import derive_features
 OUT_PATH = Path(__file__).parent / "grid.geojson"
 MUNICIPALITIES_PATH = Path(__file__).parent / "municipalities.geojson"
 CARBON_DIR = PROJECT_ROOT / "data" / "processed" / "carbon_v1_5"
+LEARNED_CARBON_DIR = PROJECT_ROOT / "data" / "processed" / "learned_carbon"
 
 # GADM level 2 = municipalities for Estonia
 GADM_URL = "https://geodata.ucdavis.edu/gadm/gadm4.1/json/gadm41_EST_2.json"
+
+
+def export_scenario_results(
+    scenario_maps_dir: Path = LEARNED_CARBON_DIR / "scenario_maps",
+    output_dir: Path = Path(__file__).parent,
+) -> None:
+    """Export saved scenario maps and summary in browser-friendly formats."""
+    scenario_maps_dir = Path(scenario_maps_dir)
+    output_dir = Path(output_dir)
+    output_maps_dir = output_dir / "scenario_maps"
+    output_maps_dir.mkdir(parents=True, exist_ok=True)
+
+    for source_path in sorted(scenario_maps_dir.glob("*.gpkg")):
+        scenario = gpd.read_file(source_path).to_crs("EPSG:4326")
+        scenario.to_file(output_maps_dir / f"{source_path.stem}.geojson", driver="GeoJSON")
+
+    summary = pd.read_parquet(scenario_maps_dir.parent / "scenario_summary.parquet")
+    (output_dir / "scenario_summary.json").write_text(
+        summary.to_json(orient="records"), encoding="utf-8"
+    )
 
 
 def main():
