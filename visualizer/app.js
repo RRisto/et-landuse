@@ -14,7 +14,8 @@ const METRICS = [
   ['Changed land', 'Muutunud maa', percent], ['Agriculture loss', 'Põllumajandusmaa kadu', percent], ['Agriculture gain', 'Põllumajandusmaa kasv', percent],
   ['Gross agriculture gain', 'Põllumajandusmaa kogukasv', percent], ['Wetland gain', 'Märgala kasv', percent],
 ];
-let selectedScenario = 'balanced'; let geojsonData; let summaryRows = []; let mapAction; let mapBio; let actionLayer; let bioLayer;
+const CURRENT_COLORS = { forest: '#228b22', wetland: '#4682b4', agriculture: '#daa520', grassland: '#90ee90' };
+let selectedScenario = 'balanced'; let geojsonData; let summaryRows = []; let mapCurrent; let mapAction; let currentLayer; let actionLayer;
 
 function percent(value) { return `${(Number(value || 0) * 100).toFixed(2)}%`; }
 function decimal(value) { return Number(value || 0).toFixed(3); }
@@ -34,16 +35,26 @@ function renderActionMap() {
   if (actionLayer) mapAction.removeLayer(actionLayer);
   actionLayer = L.geoJSON(geojsonData, { style: feature => ({ fillColor: ACTION_COLORS[feature.properties.action] || '#888', fillOpacity: .78, weight: .3, color: '#666', opacity: .3 }), onEachFeature: (feature, layer) => layer.bindPopup(`<b>Ruut ${feature.properties.cell_id}</b><br>Suurim kasv: <b>${feature.properties.action}</b>`) }).addTo(mapAction);
 }
-function renderBioMap() {
+function renderCurrentMap() {
   if (!geojsonData) return;
-  if (bioLayer) mapBio.removeLayer(bioLayer);
-  bioLayer = L.geoJSON(geojsonData, { style: feature => ({ fillColor: bioColor(feature.properties.rohemeeter_norm), fillOpacity: .8, weight: .3, color: '#666', opacity: .3 }), onEachFeature: (feature, layer) => layer.bindPopup(`<b>Ruut ${feature.properties.cell_id}</b><br>Rohemeeter: ${Number(feature.properties.rohemeeter_norm || 0).toFixed(2)}`) }).addTo(mapBio);
+  if (currentLayer) mapCurrent.removeLayer(currentLayer);
+  currentLayer = L.geoJSON(geojsonData, { style: feature => {
+    const p = feature.properties;
+    const groups = ['forest', 'wetland', 'agriculture', 'grassland'];
+    const dominant = groups.reduce((best, group) => Number(p[`current_${group}`] || 0) > Number(p[`current_${best}`] || 0) ? group : best, groups[0]);
+    return { fillColor: CURRENT_COLORS[dominant], fillOpacity: .78, weight: .3, color: '#666', opacity: .3 };
+  }, onEachFeature: (feature, layer) => {
+    const p = feature.properties;
+    const groups = ['forest', 'wetland', 'agriculture', 'grassland'];
+    const dominant = groups.reduce((best, group) => Number(p[`current_${group}`] || 0) > Number(p[`current_${best}`] || 0) ? group : best, groups[0]);
+    layer.bindPopup(`<b>Ruut ${p.cell_id}</b><br>Praegu domineerib: <b>${dominant}</b>`);
+  }}).addTo(mapCurrent);
 }
 async function selectScenario(scenario) {
   selectedScenario = scenario; renderTabs(); renderComparison(); document.getElementById('map-status').textContent = 'Kaardi laadimine…';
-  try { const response = await fetch(`scenario_maps/${scenario}.geojson`); if (!response.ok) throw new Error(response.statusText); geojsonData = await response.json(); renderActionMap(); renderBioMap(); document.getElementById('map-status').textContent = 'Kuvatakse salvestatud modelleerimistulemust.'; }
+  try { const response = await fetch(`scenario_maps/${scenario}.geojson`); if (!response.ok) throw new Error(response.statusText); geojsonData = await response.json(); renderCurrentMap(); renderActionMap(); const bounds = actionLayer.getBounds(); if (bounds.isValid()) { mapCurrent.fitBounds(bounds, { padding: [12, 12] }); mapAction.fitBounds(bounds, { padding: [12, 12] }); } document.getElementById('map-status').textContent = 'Kuvatakse salvestatud modelleerimistulemused.'; }
   catch (error) { console.error('Stsenaariumi laadimine ebaõnnestus:', error); document.getElementById('map-status').textContent = 'Stsenaariumi kaarti ei õnnestunud laadida.'; }
 }
-function initMaps() { mapAction = L.map('map-action').setView([58.95, 23.7], 9); mapBio = L.map('map-bio').setView([58.95, 23.7], 9); const tiles = 'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png'; const options = { attribution: '&copy; OpenStreetMap, &copy; CARTO', maxZoom: 15 }; L.tileLayer(tiles, options).addTo(mapAction); L.tileLayer(tiles, options).addTo(mapBio); }
+function initMaps() { mapCurrent = L.map('map-current').setView([58.95, 23.7], 9); mapAction = L.map('map-action').setView([58.95, 23.7], 9); const tiles = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'; const options = { attribution: '&copy; OpenStreetMap, &copy; CARTO', maxZoom: 15 }; L.tileLayer(tiles, options).addTo(mapCurrent); L.tileLayer(tiles, options).addTo(mapAction); }
 async function init() { initMaps(); renderTabs(); try { const response = await fetch('scenario_summary.json'); if (!response.ok) throw new Error(response.statusText); summaryRows = await response.json(); renderComparison(); } catch (error) { console.error('Võrdlusandmete laadimine ebaõnnestus:', error); document.getElementById('comparison-table').innerHTML = '<p class="status">Võrdlusandmeid ei õnnestunud laadida.</p>'; } selectScenario(selectedScenario); }
 init();

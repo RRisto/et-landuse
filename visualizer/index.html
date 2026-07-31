@@ -8,9 +8,7 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f7fa; color: #2d3748; line-height: 1.5; }
-    .header { background: linear-gradient(135deg, #1a365d, #2d7d46); color: white; padding: 1.5rem 2rem; text-align: center; }
-    .header h1 { font-size: 1.6rem; } .header p { margin-top: .35rem; opacity: .9; }
-    .container { max-width: 1400px; margin: auto; padding: 1.5rem; }
+    .container { max-width: 1240px; margin: auto; padding: 1rem; }
     .panel, .map-container { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
     .panel { padding: 1.25rem; margin-bottom: 1.5rem; } h2, h3 { color: #1a365d; }
     h2 { font-size: 1.05rem; margin-bottom: .8rem; } h3 { font-size: .9rem; padding: .8rem 1rem 0; }
@@ -18,27 +16,27 @@
     .scenario-tab { border: 2px solid #e2e8f0; border-radius: 6px; background: white; cursor: pointer; font-size: .84rem; font-weight: 600; padding: .45rem .75rem; }
     .scenario-tab:hover, .scenario-tab.active { border-color: #2d7d46; color: #216638; background: #f0fff4; }
     .status { color: #4a5568; font-size: .85rem; margin-top: .8rem; }
-    .map-section { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
+    .map-section { display: grid; grid-template-columns: repeat(2, minmax(0, 580px)); justify-content: center; gap: .8rem; margin-bottom: 1rem; }
     @media (max-width: 900px) { .map-section { grid-template-columns: 1fr; } }
-    .map { height: 400px; } .legend { display: flex; gap: .8rem; flex-wrap: wrap; padding: .7rem 1rem; font-size: .76rem; border-top: 1px solid #eee; }
+    .map { height: 360px; } .legend { display: flex; gap: .8rem; flex-wrap: wrap; padding: .7rem 1rem; font-size: .76rem; border-top: 1px solid #eee; }
     .legend-item { display: flex; align-items: center; gap: .3rem; }.legend-swatch { width: 14px; height: 14px; border-radius: 3px; }
     .explanation { background: #fffbeb; border: 1px solid #f6e05e; border-radius: 8px; padding: .8rem; margin: 1rem 0; color: #744210; font-size: .84rem; }
     .comparison { overflow-x: auto; }.comparison table { border-collapse: collapse; font-size: .78rem; min-width: 100%; width: max-content; }
     .comparison th, .comparison td { border-bottom: 1px solid #e2e8f0; padding: .55rem .65rem; text-align: right; white-space: nowrap; }
     .comparison th:first-child, .comparison td:first-child { text-align: left; }.comparison tr.selected { background: #f0fff4; font-weight: 700; }
-    .municipality-label { background: rgba(26,54,93,.85); border: none; border-radius: 4px; color: white; font-size: .7rem; padding: 2px 6px; }
   </style>
 </head>
 <body>
-  <header class="header"><h1>Eesti maakasutuse stsenaariumid</h1><p>Lääne maakonna modelleeritud valikute võrdlus</p></header>
   <main class="container">
     <section class="panel"><h2>Vali stsenaarium</h2><div class="scenario-tabs" id="scenario-tabs"></div><p class="status" id="map-status" aria-live="polite">Kaardi laadimine…</p></section>
     <p class="explanation"><strong>Värvide tähendus:</strong> värv näitab igas ruudus suurimat modelleeritud maakasutuse kasvu. See ei ole tõenäosus ega kogu maakasutuse üleminek.</p>
     <section class="map-section">
+      <article class="map-container"><h3>Hetkeolukord: domineeriv maakasutus</h3><div id="map-current" class="map"></div><div class="legend">
+        <span class="legend-item"><i class="legend-swatch" style="background:#228b22"></i>Mets</span><span class="legend-item"><i class="legend-swatch" style="background:#4682b4"></i>Märgala</span><span class="legend-item"><i class="legend-swatch" style="background:#daa520"></i>Põllumajandusmaa</span><span class="legend-item"><i class="legend-swatch" style="background:#90ee90"></i>Rohumaa</span>
+      </div></article>
       <article class="map-container"><h3>Modelleeritud suurim maakasutuse kasv</h3><div id="map-action" class="map"></div><div class="legend">
         <span class="legend-item"><i class="legend-swatch" style="background:#2d7d46"></i>Mets</span><span class="legend-item"><i class="legend-swatch" style="background:#1f78b4"></i>Märgala</span><span class="legend-item"><i class="legend-swatch" style="background:#b2df8a"></i>Rohumaa</span><span class="legend-item"><i class="legend-swatch" style="background:#f4a261"></i>Põllumajandusmaa</span><span class="legend-item"><i class="legend-swatch" style="background:#ddd"></i>Muutus puudub</span>
       </div></article>
-      <article class="map-container"><h3>Rohemeeter: elurikkus</h3><div id="map-bio" class="map"></div><div class="legend"><span class="legend-item"><i class="legend-swatch" style="background:#d73027"></i>Madal</span><span class="legend-item"><i class="legend-swatch" style="background:#fee08b"></i>Keskmine</span><span class="legend-item"><i class="legend-swatch" style="background:#1a9850"></i>Kõrge</span></div></article>
     </section>
     <section class="panel comparison"><h2>Stsenaariumide võrdlus</h2><div id="comparison-table"><p class="status">Võrdlusandmete laadimine…</p></div></section>
   </main>

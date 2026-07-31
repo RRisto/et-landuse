@@ -1,6 +1,6 @@
 # Estonia Land-Use Neuroevolution
 
-A research sandbox that applies neuroevolution (NSGA-II) to Estonian county-level land-use planning as a decision-support demo.
+A research sandbox that applies neuroevolution (NSGA-II) to Estonian county-level land-use planning as a decision-support demo. **The current model, simulations, and visualisations cover Lääne County only; they do not yet represent all of Estonia.**
 
 Explores spatial policy trade-offs between biodiversity, carbon sequestration, habitat connectivity, and restoration cost using transparent proxy assumptions. Inspired by Project Resilience / ELUC, localized to Estonian spatial data.
 
@@ -57,7 +57,7 @@ uv run jupyter lab
 
 ## Interactive visualizer
 
-A standalone HTML/JS app for exploring land-use scenarios without running Python.
+A standalone HTML/JS viewer for saved Notebook 10 scenario results.
 
 ```bash
 # Generate the grid GeoJSON (one-time, after processing data)
@@ -70,11 +70,11 @@ python -m http.server 8000 -d visualizer
 ```
 
 Features:
-- **Action map:** cells colored by assigned action, updates live with sliders
+- **Scenario map:** cells coloured by the largest modelled land-use increase in each cell
 - **Biodiversity map:** Rohemeeter scores (RdYlGn colormap)
 - **Metric cards:** CO₂ sequestration, cost, biodiversity, area, cost efficiency — all with confidence intervals
-- **Preset scenarios:** Balanced, Max Forest, Restore Wetland, Protect Only
-- **Click any cell** for popup with detailed properties
+- **Scenario comparison:** saved representative-policy results for every scenario
+- **Important:** map colours are not probabilities and do not show the full source-to-destination transition
 
 ## Project structure
 
