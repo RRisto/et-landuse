@@ -8,26 +8,63 @@ Explores spatial policy trade-offs between biodiversity, carbon sequestration, h
 
 ## How it works
 
-1. A **prescriptor** neural network recommends target land-use fractions per 1 km grid cell
+1. A **prescriptor** neural network recommends target land-use fractions for each grid cell (currently 500 m × 500 m by default)
 2. A **simulator** scores the transition from current to target land use on multiple objectives
 3. **NSGA-II** evolves a population of prescriptors to find Pareto-optimal trade-off policies
 4. A notebook visualizes results on interactive maps
 
 ## Actions
 
-| Action | Description |
-|--------|-------------|
-| No change | Leave cell as-is |
-| Protect | Conservation candidate |
-| Restore wetland | Re-wet drained peatland |
-| Afforest | Plant forest on agriculture/degraded land |
+The model does not choose one fixed action from a list. It prescribes target
+shares for forest, wetland, agricultural land, and grassland in each grid cell.
+The displayed action is the land-use type with the largest modelled increase;
+it can therefore also be agricultural-land expansion.
 
 ## Objectives
 
-- Maximize biodiversity proxy
-- Maximize carbon proxy (V1.5: spatially-informed)
-- Maximize habitat connectivity
-- Minimize intervention cost and constraint violations
+- Maximize the biodiversity proxy (including a connectivity bonus near protected areas)
+- Maximize the normalised carbon-gain score (the Notebook 10 scenarios use the learned forest-carbon model together with NIR transition factors)
+- Minimize intervention cost
+- Minimize the share of land changed
+
+Protected-area and wetland-loss rules, wetland feasibility, and agricultural-land
+loss limits are constraints and penalties; they are not separate Pareto objectives.
+
+## Customising a scenario
+
+For a one-off scenario change, edit `make_scenario_config()` in
+`notebooks/10_scenario_comparison.ipynb`, then rerun Notebook 10. The current
+Notebook 10 scenarios use the learned carbon model and these configuration changes:
+
+| Scenario | Configuration relative to the default |
+|----------|---------------------------------------|
+| **Green Maximum** | `agriculture_loss_cost=0.3`; `max_total_agri_loss_pct=0.50`; `max_changed_pct=0.40`; `budget_penalty_weight=3`; `total_agri_loss_penalty_weight=5` |
+| **Food Security** | `agriculture_loss_cost=15`; `max_total_agri_loss_pct=0.03`; `total_agri_loss_penalty_weight=100`; `max_changed_pct=0.15` |
+| **Low Budget** | `max_changed_pct=0.06`; `budget_penalty_weight=50`; `base_change_cost=2` |
+| **Wetland Priority** | `wetland_suit_min_for_restore=0.05`; `biodiversity_value=[0.4, 1.0, 0.1, 0.3]`; `max_changed_pct=0.25`; `budget_penalty_weight=5` |
+| **Balanced** | Uses all default settings below |
+
+The current Balanced defaults are `base_change_cost=0.3`,
+`agriculture_loss_cost=2`, `max_agriculture_loss_pct=0.30` per cell,
+`max_changed_pct=0.20`, `budget_penalty_weight=10`,
+`max_total_agri_loss_pct=0.15`, `total_agri_loss_penalty_weight=20`,
+`wetland_suit_min_for_restore=0.15`, and
+`biodiversity_value=[0.7, 0.9, 0.2, 0.6]` for forest, wetland, agriculture,
+and grassland respectively.
+
+Common settings to customise are:
+
+- `scoring.base_change_cost` and `scoring.agriculture_loss_cost` for the relative intervention and farmland-loss costs;
+- `max_changed_pct` and `budget_penalty_weight` for the allowed extent and penalty of land change;
+- `max_total_agri_loss_pct` and `total_agri_loss_penalty_weight` for county-wide agricultural-land protection;
+- `constraints.wetland_suit_min_for_restore` and `scoring.biodiversity_value` for wetland priority.
+
+The `Cost` result in Notebook 10 is a relative proxy, not a euro estimate. It combines
+the changed-land share, an opportunity-cost proxy, and a farmland-loss penalty. The
+opportunity-cost proxy uses land use, population, building density, and road density.
+To change how that proxy is derived, edit `opportunity_cost_weights` in
+`src/estonia_landuse/simulator/config.py`, rerun Notebook 02 to recreate the derived
+features, then rerun Notebooks 09 and 10.
 
 ## Quick start
 
@@ -38,26 +75,29 @@ uv sync
 # Launch Jupyter
 uv run jupyter lab
 
-# Run notebooks in order:
-# 01    — Collect datasets (builds base grid + features, supports 500m/1km)
-# 01.2  — Fetch Rohemeeter biodiversity scores
-# 01.4  — Process soil map (real peat coverage from Mullakaart)
-# 02    — Simulator and baselines (derives wetland_suitability, opportunity_cost, etc.)
-# 03    — Neuroevolution (NSGA-II training)
-# 03.1  — Neuroevolution with carbon v1.5
-# 03.2  — Neuroevolution with Rohemeeter biodiversity
-# 04    — UNFCCC data download + NIR model comparison
-# 05    — Evolution comparison: flat vs NIR carbon
-# 06    — Download forest registry compartment geometries
-# 07    — Fetch detailed forest attributes (parallel)
-# 08    — Train GBR carbon predictor from real data
-# 09    — Spatial join + full model comparison + maps
-# 10    — Policy scenario comparison (5 scenarios, full Pareto analysis)
 ```
+
+### Run Notebook 10 with the learned-carbon data
+
+To reproduce the current Lääne County scenario simulation, run these notebooks in order:
+
+1. `01_collect_datasets.ipynb` — build the base grid and land-use inputs.
+2. `01.2_fetch_rohemeeter.ipynb` — add Rohemeeter biodiversity data.
+3. `01.4_process_soil_map.ipynb` — add peat-soil coverage.
+4. `02_simulator_and_baselines.ipynb` — derive simulator features such as wetland suitability and opportunity-cost proxy.
+5. `06_download_forest_registry.ipynb` — download forest-registry compartment geometries.
+6. `07_fetch_forest_details.ipynb` — download detailed forest attributes.
+7. `08_train_carbon_predictor.ipynb` — train the GBR forest-carbon predictor.
+8. `09_spatial_join_and_model.ipynb` — create `data/processed/learned_carbon/features_with_forest.parquet`, the input used by Notebook 10.
+9. `10_scenario_comparison.ipynb` — run the scenario simulations and save their results and maps.
+
+Notebooks `03` through `05` are comparison and earlier-model experiments; they are not prerequisites for Notebook 10.
 
 ## Interactive visualizer
 
 A standalone HTML/JS viewer for saved Notebook 10 scenario results.
+
+Open the published visualisation: [ristohinno.com/landuse](https://ristohinno.com/landuse/).
 
 ```bash
 # Generate the grid GeoJSON (one-time, after processing data)
@@ -70,10 +110,11 @@ python -m http.server 8000 -d visualizer
 ```
 
 Features:
-- **Scenario map:** cells coloured by the largest modelled land-use increase in each cell
-- **Biodiversity map:** Rohemeeter scores (RdYlGn colormap)
-- **Metric cards:** CO₂ sequestration, cost, biodiversity, area, cost efficiency — all with confidence intervals
+- **Scenario selection:** switching a scenario loads its saved model result and highlights it in the comparison table
+- **Current land-use map:** the dominant present land-use type in each cell
+- **Scenario map:** cells coloured by the largest modelled land-use increase: forest, wetland, grassland, or agricultural land (or no substantial change)
 - **Scenario comparison:** saved representative-policy results for every scenario
+- **Cell pop-ups:** click a cell to see its identifier and dominant current land use or modelled increase
 - **Important:** map colours are not probabilities and do not show the full source-to-destination transition
 
 ## Project structure
@@ -99,7 +140,7 @@ Features:
 │   │   │   ├── carbon_tonnes.py         # Lookup-based carbon (V1.5)
 │   │   │   ├── carbon_nir.py           # NIR-calibrated carbon model
 │   │   │   ├── carbon_learned.py       # GBR-based carbon (pre-computed predictions)
-│   │   │   ├── cost_eur.py             # Cost estimation in EUR with CI
+│   │   │   ├── cost_eur.py             # Post-processing cost estimates in EUR
 │   │   │   ├── simulator.py            # Main scorer (supports model switching)
 │   │   │   └── config.py               # Config with carbon_model selector
 │   │   └── optimizer/                   # NSGA-II, prescriptors, seeds
@@ -210,7 +251,7 @@ Uses real compartment-level data from the Estonian Forest Registry (metsaregiste
 
 1. **Download geometries** via public WFS at `gsavalik.envir.ee/geoserver/mr_portaal/wfs` (CC-BY 4.0)
 2. **Fetch detailed attributes** via REST API at `register.metsad.ee/portaal/api/rest/eraldis/detail/{id}`
-3. **Spatial join** compartment features to the 1km grid (area-weighted)
+3. **Spatial join** compartment features to the configured analysis grid (area-weighted)
 4. **Train GBR** to predict tCO2/ha/yr from (species, age, site class, drainage, height)
 
 ### Conversion formula
@@ -311,22 +352,6 @@ drained-peatland emission factors, which are much larger than mineral soil value
 
 **Disclaimer:** These are order-of-magnitude estimates. Actual values require site-specific
 assessment. Use for communication and scenario comparison, not carbon accounting.
-
-## Cost estimation (EUR)
-
-The module `src/estonia_landuse/simulator/cost_eur.py` estimates implementation cost
-and opportunity cost (lost income) in EUR, with confidence intervals.
-
-### Sources for cost estimates
-
-| Parameter | Value range | Source |
-|-----------|-------------|--------|
-| Afforestation (planting + maintenance) | €1,500–4,000/ha | [Arbonics/AgFunder 2025](https://agfundernews.com/planting-more-forests-comes-with-high-upfront-costs-many-landowners-cant-afford-report) |
-| Peatland rewetting | €2,000–15,000/ha | [ERR 2024: €40M+ spent](https://news.err.ee/1609248588/estonia-planning-to-restore-25-000-hectares-of-marshland-by-2050); [€68M meadows plan](https://news.err.ee/1609570045/68-million-meadows-restoration-plan-added-to-updated-climate-act) |
-| Agricultural land rent (opportunity cost) | €100–300/ha/yr | [ERR 2026: ~€150/ha/yr](https://news.err.ee/1610026633/agricultural-land-prices-fall-in-estonia-amid-lack-of-large-deals); [Eurostat EU avg €295](https://ec.europa.eu/eurostat/statistics-explained/index.php?title=Agricultural_land_prices_and_rents_-_statistics) |
-| Agricultural land price | €6,122/ha avg (Estonia 2025) | [ERR 2026](https://news.err.ee/1610026633/agricultural-land-prices-fall-in-estonia-amid-lack-of-large-deals) |
-
-Costs include a configurable time horizon (default 20 years) for opportunity cost annualization.
 
 ## Tech stack
 
