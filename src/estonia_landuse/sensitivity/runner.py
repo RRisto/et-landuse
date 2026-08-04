@@ -13,6 +13,7 @@ from hashlib import sha256
 from pathlib import Path
 from time import perf_counter
 from typing import Any
+from zipfile import BadZipFile
 
 import numpy as np
 import pandas as pd
@@ -53,8 +54,8 @@ class RunArtifacts:
     """Terminal paths and status for one historical optimizer execution."""
 
     status: str
-    metrics_path: Path
-    targets_path: Path
+    metrics_path: Path | None
+    targets_path: Path | None
     error_type: str | None = None
     error_message: str | None = None
 
@@ -150,12 +151,24 @@ def _manifest_design(row: Mapping[str, object]) -> dict[str, object]:
 
 def _effective_config(row: Mapping[str, object]) -> dict:
     config = make_historical_scenario_config(str(row["scenario"]))
+    historical_fourth_objective = config.get("optimization", {}).get(
+        "fourth_objective", "changed_pct"
+    )
     overrides = row.get("overrides", {})
     if overrides is None:
         return config
     if not isinstance(overrides, Mapping):
         raise ValueError("manifest overrides must be a mapping of dotted paths to values")
-    return apply_overrides(config, overrides)
+    changed = apply_overrides(config, overrides)
+    changed_fourth_objective = changed.get("optimization", {}).get(
+        "fourth_objective", "changed_pct"
+    )
+    if changed_fourth_objective != historical_fourth_objective:
+        raise ValueError(
+            "sensitivity overrides cannot change the historical fourth objective "
+            f"from {historical_fourth_objective!r} to {changed_fourth_objective!r}"
+        )
+    return changed
 
 
 def _run_metadata(
@@ -283,7 +296,7 @@ def _stored_pair_matches(
                 and targets["cell_ids"].shape == (n_cells,)
                 and all(targets[field].item() == metadata[field] for field in identity_fields)
             )
-    except (IndexError, KeyError, OSError, ValueError):
+    except (BadZipFile, EOFError, IndexError, KeyError, OSError, ValueError):
         return False
 
 
@@ -446,16 +459,37 @@ def _atomic_csv(frame: pd.DataFrame, path: Path) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _manifest_paths(
+    output_dir: Path,
+    experiment: object,
+    cohort_signature: str,
+) -> tuple[Path, Path]:
+    """Build safe manifest paths contained by the requested manifest root."""
+    component = _safe_component(experiment, "experiment")
+    manifest_root = output_dir.resolve(strict=False) / "manifests"
+    paths = (
+        output_dir / "manifests" / f"{component}-{cohort_signature[:16]}.csv",
+        output_dir / "manifests" / f"{component}.csv",
+    )
+    for path in paths:
+        try:
+            path.resolve(strict=False).relative_to(manifest_root)
+        except ValueError as error:
+            raise ValueError(f"manifest path escapes output directory: {path}") from error
+    return paths
+
+
 def _persist_manifest_copies(
     output_dir: Path,
     manifest: pd.DataFrame,
 ) -> dict[str, tuple[Path, Path]]:
-    paths: dict[str, tuple[Path, Path]] = {}
-    manifest_dir = output_dir / "manifests"
+    cohorts: list[tuple[object, pd.DataFrame, tuple[Path, Path]]] = []
     for experiment, rows in manifest.groupby("experiment", sort=False):
         signature = str(rows["cohort_signature"].iloc[0])
-        cohort_path = manifest_dir / f"{experiment}-{signature[:16]}.csv"
-        alias_path = manifest_dir / f"{experiment}.csv"
+        cohorts.append((experiment, rows, _manifest_paths(output_dir, experiment, signature)))
+
+    paths: dict[str, tuple[Path, Path]] = {}
+    for experiment, rows, (cohort_path, alias_path) in cohorts:
         _atomic_csv(rows, cohort_path)
         _atomic_csv(rows, alias_path)
         paths[str(experiment)] = (cohort_path, alias_path)
@@ -530,7 +564,10 @@ def run_manifest(
             error_type=None,
             error_message=None,
         )
+        metrics_path: Path | None = None
+        targets_path: Path | None = None
         try:
+            metrics_path, targets_path = _artifact_paths(output_root, row)
             artifacts = run_experiment_row(
                 context,
                 feature_columns,
@@ -540,7 +577,6 @@ def run_manifest(
                 overwrite=overwrite,
             )
         except Exception as error:  # noqa: BLE001 - isolate row-level failures
-            metrics_path, targets_path = _artifact_paths(output_root, row)
             artifacts = RunArtifacts(
                 "failed",
                 metrics_path,
@@ -552,8 +588,12 @@ def run_manifest(
         terminal = {
             "status": artifacts.status,
             "finished_at": finished_at,
-            "metrics_path": str(artifacts.metrics_path),
-            "targets_path": str(artifacts.targets_path),
+            "metrics_path": (
+                str(artifacts.metrics_path) if artifacts.metrics_path is not None else None
+            ),
+            "targets_path": (
+                str(artifacts.targets_path) if artifacts.targets_path is not None else None
+            ),
             "error_type": artifacts.error_type,
             "error_message": artifacts.error_message,
         }

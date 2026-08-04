@@ -238,6 +238,70 @@ def test_artifact_identity_and_resume_require_a_complete_matching_pair(
     assert not [path for path in repaired.targets_path.parent.iterdir() if path.name.startswith(".")]
 
 
+@pytest.mark.parametrize("corruption", ["empty", "truncated"])
+def test_corrupt_target_archive_is_recomputed(
+    tmp_path: Path,
+    runner_context: pd.DataFrame,
+    trainer_spy: list[dict[str, object]],
+    corruption: str,
+) -> None:
+    """Catch an unreadable NPZ aborting resume instead of being repaired."""
+    feature_columns = ["wetland_suitability", "opportunity_cost_proxy"]
+    first = run_experiment_row(
+        runner_context,
+        feature_columns,
+        _row(),
+        tmp_path,
+        "test",
+    )
+    assert first.targets_path is not None
+    contents = first.targets_path.read_bytes()
+    damaged = b"" if corruption == "empty" else contents[: len(contents) // 2]
+    first.targets_path.write_bytes(damaged)
+
+    repaired = run_experiment_row(
+        runner_context,
+        feature_columns,
+        _row(),
+        tmp_path,
+        "test",
+    )
+
+    assert repaired.status == "completed"
+    assert len(trainer_spy) == 2
+    assert repaired.targets_path is not None
+    with np.load(repaired.targets_path) as archive:
+        assert archive["targets"].shape == (len(runner_context), 4)
+
+
+@pytest.mark.parametrize(
+    ("scenario", "overrides"),
+    [
+        ("wetland_priority", {"optimization.fourth_objective": "changed_pct"}),
+        ("balanced", {"optimization": {"fourth_objective": "wetland_gain_pct"}}),
+    ],
+)
+def test_overrides_cannot_change_the_historical_fourth_objective(
+    tmp_path: Path,
+    runner_context: pd.DataFrame,
+    trainer_spy: list[dict[str, object]],
+    scenario: str,
+    overrides: dict[str, object],
+) -> None:
+    """Catch a sensitivity row silently changing historical objective semantics."""
+    with pytest.raises(ValueError, match="historical fourth objective"):
+        run_experiment_row(
+            runner_context,
+            ["wetland_suitability"],
+            _row(scenario=scenario, overrides=overrides),
+            tmp_path,
+            "test",
+        )
+
+    assert not trainer_spy
+    assert not list(tmp_path.iterdir())
+
+
 def test_manifest_parent_persists_terminal_statuses_and_cohort_alias(
     tmp_path: Path,
     runner_context: pd.DataFrame,
@@ -301,6 +365,67 @@ def test_each_experiment_manifest_contains_only_its_own_cohort(
     oat = pd.read_csv(tmp_path / "manifests" / "oat.csv")
     assert list(baseline["experiment"]) == ["baseline"]
     assert list(oat["experiment"]) == ["oat"]
+
+
+def test_manifest_path_traversal_is_rejected_before_any_write(
+    tmp_path: Path,
+    runner_context: pd.DataFrame,
+) -> None:
+    """Catch a raw experiment value escaping the manifest directory."""
+    output_dir = tmp_path / "output"
+    manifest = pd.DataFrame(
+        [
+            _row(),
+            _row(experiment="../../escaped", sample_id="escaped", seed=74),
+        ]
+    )
+
+    with pytest.raises(ValueError, match="unsafe artifact path component for experiment"):
+        run_manifest(
+            runner_context,
+            ["wetland_suitability"],
+            manifest,
+            output_dir,
+            "test",
+        )
+
+    assert not output_dir.exists()
+    assert not list(tmp_path.glob("escaped*"))
+
+
+@pytest.mark.parametrize(
+    "row_changes",
+    [
+        {"sample_id": "../unsafe"},
+        {"seed": "not-an-integer"},
+    ],
+)
+def test_invalid_artifact_key_becomes_a_terminal_row_failure(
+    tmp_path: Path,
+    runner_context: pd.DataFrame,
+    row_changes: dict[str, object],
+) -> None:
+    """Catch unsafe failure fallback leaving a persisted row as running."""
+    output_dir = tmp_path / "output"
+    progress: list[tuple[int, int, str]] = []
+
+    result = run_manifest(
+        runner_context,
+        ["wetland_suitability"],
+        pd.DataFrame([_row(**row_changes)]),
+        output_dir,
+        "test",
+        progress=lambda completed, total, status: progress.append((completed, total, status)),
+    )
+
+    assert list(result["status"]) == ["failed"]
+    assert result.loc[0, "error_type"] in {"ValueError", "TypeError"}
+    assert pd.isna(result.loc[0, "metrics_path"])
+    assert pd.isna(result.loc[0, "targets_path"])
+    assert progress == [(1, 1, "failed")]
+    persisted = pd.read_csv(output_dir / "manifests" / "baseline.csv")
+    assert list(persisted["status"]) == ["failed"]
+    assert not (tmp_path / "unsafe").exists()
 
 
 def test_sequential_runner_rejects_parallel_workers(
