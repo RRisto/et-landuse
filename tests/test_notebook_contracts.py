@@ -20,6 +20,7 @@ MODERNIZED_NOTEBOOKS = [
     "05_compare_carbon_models.ipynb",
     "06_download_forest_registry.ipynb",
     "07_fetch_forest_details.ipynb",
+    "10.1_fast_scenario_reproduction.ipynb",
 ]
 
 
@@ -286,3 +287,27 @@ def test_scenario_map_plots_scale_to_all_scenarios_and_close_figures() -> None:
         assert "n_rows = int(np.ceil(len(results) / n_cols))" in source
         assert "if idx >= 6:" not in source
         assert "plt.close(fig)" in source
+
+
+def test_fast_scenario_reproduction_notebook_contract() -> None:
+    """The gate must run the historical model without mutating Notebook 10 outputs."""
+    source = _source("10.1_fast_scenario_reproduction.ipynb")
+
+    assert "from estonia_landuse.sensitivity.runner import run_manifest" in source
+    assert "from estonia_landuse.sensitivity.reproduction import (" in source
+    assert "compare_reference_summary" in source
+    assert 'SENSITIVITY_PROFILE", "full"' in source
+    assert 'SENSITIVITY_N_WORKERS' in source
+    assert 'SENSITIVITY_OUTPUT_ROOT' in source
+    assert 'SENSITIVITY_FEATURES_PATH' in source
+    assert 'SENSITIVITY_GRID_PATH' in source
+    assert 'SENSITIVITY_REFERENCE_SUMMARY_PATH' in source
+    assert 'seeds=[42]' in source
+    assert "manifest_run_count" in source
+    assert "manifest.head(6)" in source
+    assert "progress=" in source
+    assert "data/processed/legacy_sensitivity" in source
+    assert "FULL REPRODUCTION GATE: PENDING" in source
+    assert "10_scenario_comparison.ipynb" not in source
+    assert "nbconvert" not in source
+    assert "data/processed/learned_carbon/scenario_summary.parquet" not in source
