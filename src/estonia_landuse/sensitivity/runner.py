@@ -719,6 +719,17 @@ def _execute_row(
         )
 
 
+def _optional_artifact_paths(
+    output_dir: Path,
+    row: Mapping[str, object],
+) -> tuple[Path | None, Path | None]:
+    """Return safe recovery paths without replacing an infrastructure error."""
+    try:
+        return _artifact_paths(output_dir, row)
+    except Exception:  # noqa: BLE001 - recovery must retain the original failure
+        return None, None
+
+
 def _row_has_complete_artifacts(
     context: pd.DataFrame,
     feature_columns: Sequence[str],
@@ -916,9 +927,11 @@ def run_manifest(
             for position, row, started_at in pending:
                 if results[position] is not None:
                     continue
+                metrics_path, targets_path = _optional_artifact_paths(output_root, row)
                 artifacts = RunArtifacts(
                     "failed",
-                    *_artifact_paths(output_root, row),
+                    metrics_path,
+                    targets_path,
                     type(infrastructure_error).__name__,
                     str(infrastructure_error),
                 )

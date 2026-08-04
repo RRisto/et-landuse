@@ -359,6 +359,37 @@ def test_pool_startup_failure_terminalizes_all_running_rows(
     assert "running" not in set(persisted["status"])
 
 
+def test_pool_startup_failure_terminalizes_rows_with_invalid_execution_keys(
+    tmp_path: Path,
+    parallel_context: pd.DataFrame,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catch fallback path reconstruction masking the pool failure."""
+    monkeypatch.setattr(runner, "ProcessPoolExecutor", _StartupFailure, raising=False)
+    manifest = pd.DataFrame(
+        [
+            _row(sample_id="../unsafe"),
+            _row(sample_id="invalid-scenario", scenario="unknown", seed=3),
+            _row(sample_id="invalid-seed", seed="not-an-integer"),
+        ]
+    )
+
+    with pytest.raises(RuntimeError, match="pool startup failed"):
+        run_manifest(
+            parallel_context,
+            ["wetland_suitability"],
+            manifest,
+            tmp_path,
+            TINY_PROFILE,
+            n_workers=2,
+        )
+
+    persisted = pd.read_csv(tmp_path / "manifests" / "baseline.csv")
+    assert list(persisted["status"]) == ["failed", "failed", "failed"]
+    assert set(persisted["error_type"]) == {"RuntimeError"}
+    assert "running" not in set(persisted["status"])
+
+
 def test_stale_running_rows_backed_by_artifacts_are_repaired_without_dispatch(
     tmp_path: Path,
     parallel_context: pd.DataFrame,
@@ -469,4 +500,36 @@ def test_submit_failure_reconciles_completed_and_unresolved_rows(
 
     persisted = pd.read_csv(tmp_path / "manifests" / "baseline.csv")
     assert list(persisted["status"]) == ["completed", "failed"]
+    assert "running" not in set(persisted["status"])
+
+
+def test_submit_failure_terminalizes_unsubmitted_invalid_execution_keys(
+    tmp_path: Path,
+    parallel_context: pd.DataFrame,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Catch invalid unresolved rows replacing submit failure during recovery."""
+    monkeypatch.setattr(runner, "ProcessPoolExecutor", _InlineFutureExecutor, raising=False)
+    manifest = pd.DataFrame(
+        [
+            _row(),
+            _row(sample_id="../unsafe", seed=3),
+            _row(sample_id="invalid-scenario", scenario="unknown", seed=4),
+            _row(sample_id="invalid-seed", seed="not-an-integer"),
+        ]
+    )
+
+    with pytest.raises(RuntimeError, match="submit infrastructure failed"):
+        run_manifest(
+            parallel_context,
+            ["wetland_suitability"],
+            manifest,
+            tmp_path,
+            TINY_PROFILE,
+            n_workers=2,
+        )
+
+    persisted = pd.read_csv(tmp_path / "manifests" / "baseline.csv")
+    assert list(persisted["status"]) == ["completed", "failed", "failed", "failed"]
+    assert set(persisted.loc[1:, "error_type"]) == {"RuntimeError"}
     assert "running" not in set(persisted["status"])
