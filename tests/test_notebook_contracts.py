@@ -388,10 +388,12 @@ def test_robustness_notebook_reuses_artifacts_and_schedules_only_missing_runs() 
     assert "missing_manifest_rows(manifest, inventory)" in source
     assert "planned_new_runs" in source
     assert "Planned new biodiversity runs" in source
+    assert "full_manifest_for_partial_resume(manifest, missing_manifest)" in source
+    assert "context, feature_columns, execution_manifest, OUTPUT_ROOT, PROFILE" in source
+    assert "context, feature_columns, missing_manifest, OUTPUT_ROOT" not in source
     assert "build_robustness_report(" in source
     assert "OUTPUT_ROOT, REPORT_DIR, PROFILE, expected_identity=expected_identity" in source
     assert 'report_paths["completeness"]' in source
     assert 'report_paths["conclusions"]' in source
-    assert "stable" in source.lower()
-    assert "unstable" in source.lower()
-    assert "unavailable" in source.lower()
+    assert "descriptive screening diagnostics" in source.lower()
+    assert "not statistical confirmation" in source.lower()

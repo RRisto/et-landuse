@@ -13,6 +13,7 @@ from estonia_landuse.sensitivity.robustness import (
     build_robustness_report,
     classify_interactions,
     classify_parameter_importance,
+    full_manifest_for_partial_resume,
     inventory_artifacts,
     missing_manifest_rows,
     summarize_scenario_rank_stability,
@@ -197,6 +198,26 @@ def test_missing_manifest_rows_reschedules_same_key_with_different_design(
     assert len(missing_manifest_rows(manifest, inventory)) == 1
 
 
+def test_partial_resume_preserves_full_expected_cohort() -> None:
+    expected = pd.DataFrame(
+        [
+            {
+                "experiment": "biodiversity",
+                "sample_id": f"assumption-{index}",
+                "scenario": "balanced",
+                "seed": 0,
+            }
+            for index in range(4)
+        ]
+    )
+    missing = expected.iloc[[2]].copy()
+
+    execution = full_manifest_for_partial_resume(expected, missing)
+
+    assert len(execution) == 4
+    assert set(execution["sample_id"]) == set(expected["sample_id"])
+
+
 def test_incompatible_expected_identity_is_not_reused(tmp_path: Path) -> None:
     _write_artifact(tmp_path, seed=0)
     expected = ("test", "different-input", "code-a", 1)
@@ -310,33 +331,93 @@ def test_report_counts_and_withholds_incomplete_comparison_groups(tmp_path: Path
     assert pd.read_csv(paths["rank_stability"]).empty
 
 
-def test_parameter_importance_requires_fit_rank_and_uncertainty() -> None:
+def test_rank_conclusion_is_unavailable_when_required_outcome_is_omitted(
+    tmp_path: Path,
+) -> None:
+    for scenario in ("green", "balanced"):
+        _write_artifact(tmp_path, scenario=scenario, seed=0)
+        path = (
+            tmp_path
+            / "runs"
+            / "biodiversity"
+            / "biodiversity__current"
+            / scenario
+            / "seed_0.parquet"
+        )
+        pd.read_parquet(path).drop(columns="cost").to_parquet(path, index=False)
+    _write_latest_manifest(
+        tmp_path,
+        "biodiversity",
+        [
+            {"scenario": "green", "seed": 0},
+            {"scenario": "balanced", "seed": 0},
+        ],
+    )
+
+    paths = build_robustness_report(tmp_path, tmp_path / "report", "test")
+    conclusions = json.loads(paths["conclusions"].read_text(encoding="utf-8"))
+
+    assert conclusions["scenario_rank_stability"] == "unavailable"
+
+
+def test_parameter_importance_requires_fit_rank_and_repeat_dispersion() -> None:
     base = pd.DataFrame(
         [
             {
                 "held_out_r2": 0.6,
+                "scenario": "balanced",
+                "outcome": "carbon_gain",
                 "top_parameter_rank_consistent": True,
-                "top_parameter_uncertainty_pass": True,
+                "top_parameter_repeat_dispersion_pass": True,
                 "model_fit_pass": True,
             }
         ]
     )
 
-    assert classify_parameter_importance(base) == "stable"
-    assert classify_parameter_importance(base.assign(held_out_r2=0.0)) == "unstable"
+    expected = {("balanced", "carbon_gain")}
+    assert classify_parameter_importance(base, expected) == "screening-consistent"
     assert classify_parameter_importance(
-        base.assign(top_parameter_uncertainty_pass=False)
-    ) == "unstable"
+        base.assign(held_out_r2=0.0), expected
+    ) == "screening-variable"
+    assert classify_parameter_importance(
+        base.assign(top_parameter_repeat_dispersion_pass=False), expected
+    ) == "screening-variable"
+    assert classify_parameter_importance(
+        base, {("balanced", "carbon_gain"), ("balanced", "cost")}
+    ) == "unavailable"
     assert classify_parameter_importance(pd.DataFrame()) == "unavailable"
 
 
 def test_interaction_conclusion_uses_baseline_noise_scale() -> None:
     tiny_absolute_but_large_relative = pd.DataFrame(
-        [{"max_abs_interaction_residual": 0.001, "max_abs_residual_to_noise": 2.0}]
+        [{
+            "scenario": "balanced",
+            "parameter_x": "a",
+            "parameter_y": "b",
+            "outcome": "cost",
+            "max_abs_interaction_residual": 0.001,
+            "max_abs_residual_to_noise": 2.0,
+        }]
     )
     large_absolute_but_small_relative = pd.DataFrame(
-        [{"max_abs_interaction_residual": 1.0, "max_abs_residual_to_noise": 0.5}]
+        [{
+            "scenario": "balanced",
+            "parameter_x": "a",
+            "parameter_y": "b",
+            "outcome": "cost",
+            "max_abs_interaction_residual": 1.0,
+            "max_abs_residual_to_noise": 0.5,
+        }]
     )
 
-    assert classify_interactions(tiny_absolute_but_large_relative) == "unstable"
-    assert classify_interactions(large_absolute_but_small_relative) == "stable"
+    expected = {("balanced", "a", "b", "cost")}
+    assert classify_interactions(
+        tiny_absolute_but_large_relative, expected
+    ) == "screening-large-relative-to-seed-sd"
+    assert classify_interactions(
+        large_absolute_but_small_relative, expected
+    ) == "screening-small-relative-to-seed-sd"
+    assert classify_interactions(
+        large_absolute_but_small_relative,
+        expected | {("balanced", "a", "b", "carbon_gain")},
+    ) == "unavailable"

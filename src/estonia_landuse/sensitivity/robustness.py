@@ -284,6 +284,22 @@ def missing_manifest_rows(
     return manifest.loc[missing_positions].reset_index(drop=True)
 
 
+def full_manifest_for_partial_resume(
+    expected_manifest: pd.DataFrame, missing_manifest: pd.DataFrame
+) -> pd.DataFrame:
+    """Return the full cohort so runner alias persistence cannot shrink on resume."""
+    key_columns = list(EXECUTION_KEY_COLUMNS)
+    expected_keys = set(
+        map(tuple, expected_manifest[key_columns].itertuples(index=False, name=None))
+    )
+    missing_keys = set(
+        map(tuple, missing_manifest[key_columns].itertuples(index=False, name=None))
+    )
+    if not missing_keys.issubset(expected_keys):
+        raise ValueError("missing-run manifest is not a subset of the expected cohort")
+    return expected_manifest.copy().reset_index(drop=True)
+
+
 def summarize_scenario_rank_stability(
     runs: pd.DataFrame,
     outcome: str,
@@ -407,40 +423,64 @@ def _conclusion(available: bool, stable: bool) -> str:
     return "stable" if stable else "unstable"
 
 
-def classify_parameter_importance(frame: pd.DataFrame) -> str:
-    """Apply prespecified fit, rank-consistency, and uncertainty gates."""
+def classify_parameter_importance(
+    frame: pd.DataFrame,
+    expected_analyses: set[tuple[str, str]] | None = None,
+) -> str:
+    """Apply descriptive fit, rank-consistency, and repeat-dispersion screens."""
     required = {
         "held_out_r2",
         "top_parameter_rank_consistent",
-        "top_parameter_uncertainty_pass",
+        "top_parameter_repeat_dispersion_pass",
         "model_fit_pass",
     }
     if frame.empty or not required.issubset(frame.columns):
         return "unavailable"
-    stable = bool(
+    actual = set(zip(frame["scenario"], frame["outcome"], strict=False))
+    if expected_analyses is not None and actual != expected_analyses:
+        return "unavailable"
+    consistent = bool(
         frame[
             [
                 "top_parameter_rank_consistent",
-                "top_parameter_uncertainty_pass",
+                "top_parameter_repeat_dispersion_pass",
                 "model_fit_pass",
             ]
         ].all(axis=None)
         and frame["held_out_r2"].ge(MIN_HELD_OUT_R2).all()
     )
-    return "stable" if stable else "unstable"
+    return "screening-consistent" if consistent else "screening-variable"
 
 
-def classify_interactions(frame: pd.DataFrame) -> str:
-    """Classify interaction residuals relative to matched baseline seed noise."""
+def classify_interactions(
+    frame: pd.DataFrame,
+    expected_analyses: set[tuple[str, str, str, str]] | None = None,
+) -> str:
+    """Screen interaction residuals relative to descriptive baseline seed SD."""
     if frame.empty or "max_abs_residual_to_noise" not in frame:
         return "unavailable"
-    stable = bool(
+    actual = set(
+        zip(
+            frame["scenario"],
+            frame["parameter_x"],
+            frame["parameter_y"],
+            frame["outcome"],
+            strict=False,
+        )
+    )
+    if expected_analyses is not None and actual != expected_analyses:
+        return "unavailable"
+    descriptively_small = bool(
         frame["max_abs_residual_to_noise"].notna().all()
         and frame["max_abs_residual_to_noise"].le(
             MAX_INTERACTION_TO_BASELINE_NOISE
         ).all()
     )
-    return "stable" if stable else "unstable"
+    return (
+        "screening-small-relative-to-seed-sd"
+        if descriptively_small
+        else "screening-large-relative-to-seed-sd"
+    )
 
 
 def _json_scalar(value: object) -> object:
@@ -558,7 +598,7 @@ def build_robustness_report(
                     ranked["spearman_rho"].abs().idxmax(), "parameter"
                 ]
                 top_row = ranked.loc[ranked["parameter"].eq(top_permutation)].iloc[0]
-                uncertainty_pass = bool(
+                repeat_dispersion_pass = bool(
                     top_row["permutation_importance_mean"]
                     - PERMUTATION_UNCERTAINTY_Z * top_row["permutation_importance_sd"]
                     > 0.0
@@ -572,7 +612,7 @@ def build_robustness_report(
                         held_out_r2=held_out_r2,
                         min_held_out_r2=MIN_HELD_OUT_R2,
                         top_parameter_rank_consistent=rank_consistent,
-                        top_parameter_uncertainty_pass=uncertainty_pass,
+                        top_parameter_repeat_dispersion_pass=repeat_dispersion_pass,
                         model_fit_pass=model_fit_pass,
                     )
                 )
@@ -591,7 +631,7 @@ def build_robustness_report(
                 "held_out_r2",
                 "min_held_out_r2",
                 "top_parameter_rank_consistent",
-                "top_parameter_uncertainty_pass",
+                "top_parameter_repeat_dispersion_pass",
                 "model_fit_pass",
             )
         )
@@ -631,10 +671,35 @@ def build_robustness_report(
         except ValueError:
             pass
 
-    parameter_importance_conclusion = classify_parameter_importance(
-        parameter_importance
+    global_manifest = manifests.get("global")
+    expected_importance_analyses = (
+        {
+            (scenario, outcome)
+            for scenario in global_manifest["scenario"].astype(str).unique()
+            for outcome in OUTCOMES
+        }
+        if global_manifest is not None
+        else None
     )
-    interaction_conclusion = classify_interactions(interactions)
+    parameter_importance_conclusion = classify_parameter_importance(
+        parameter_importance, expected_importance_analyses
+    )
+    interaction_manifest = manifests.get("interactions")
+    expected_interaction_analyses = (
+        {
+            (str(row.scenario), str(row.parameter_x), str(row.parameter_y), outcome)
+            for row in interaction_manifest[
+                ["scenario", "parameter_x", "parameter_y"]
+            ].drop_duplicates().itertuples(index=False)
+            for outcome in OUTCOMES
+        }
+        if interaction_manifest is not None
+        and {"parameter_x", "parameter_y"}.issubset(interaction_manifest.columns)
+        else None
+    )
+    interaction_conclusion = classify_interactions(
+        interactions, expected_interaction_analyses
+    )
     rank_stable = (
         not rank_stability.empty
         and rank_stability.groupby("outcome")["first_place_frequency"]
@@ -651,7 +716,9 @@ def build_robustness_report(
             else None
         ),
         "scenario_rank_stability": _conclusion(
-            complete_rank_evidence and not rank_stability.empty,
+            complete_rank_evidence
+            and not rank_stability.empty
+            and set(rank_stability["outcome"]) == set(OUTCOMES),
             bool(rank_stable),
         ),
         "parameter_importance": parameter_importance_conclusion,
@@ -684,10 +751,12 @@ def build_robustness_report(
         "parameter_importance_criteria": {
             "minimum_held_out_r2": MIN_HELD_OUT_R2,
             "top_rank_must_match_absolute_spearman": True,
-            "top_permutation_mean_minus_z_sd_must_exceed_zero": PERMUTATION_UNCERTAINTY_Z,
+            "descriptive_top_permutation_mean_minus_repeat_sd_multiplier_must_exceed_zero": PERMUTATION_UNCERTAINTY_Z,
+            "interpretation": "screening diagnostic only; permutation repeats are not independent resamples",
         },
         "interaction_criterion": {
-            "maximum_interaction_to_baseline_noise": MAX_INTERACTION_TO_BASELINE_NOISE
+            "maximum_interaction_to_baseline_seed_sd": MAX_INTERACTION_TO_BASELINE_NOISE,
+            "interpretation": "descriptive screening only; baseline seed SD is not a confidence interval",
         },
     }
 
