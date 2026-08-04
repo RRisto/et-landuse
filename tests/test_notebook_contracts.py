@@ -337,6 +337,9 @@ def test_historical_sensitivity_notebooks_share_execution_contract(name: str) ->
     assert "SENSITIVITY_OVERWRITE" in source
     assert "SENSITIVITY_OUTPUT_ROOT" in source
     assert "SENSITIVITY_FEATURES_PATH" in source
+    assert "HISTORICAL_ROOT" in source
+    assert 'PROJECT_ROOT.parent.name == ".worktrees"' in source
+    assert 'HISTORICAL_ROOT / "data/processed/learned_carbon/features_with_forest.parquet"' in source
     assert "DEFAULT_SEEDS[PROFILE]" in source
     assert "manifest_run_count(manifest)" in source
     assert "manifest.head(" in source
@@ -345,6 +348,27 @@ def test_historical_sensitivity_notebooks_share_execution_contract(name: str) ->
     assert "data/processed/legacy_sensitivity" in source
     assert "data/processed/sensitivity" not in source
     assert "10_scenario_comparison.ipynb" not in source
+
+
+@pytest.mark.parametrize(
+    "name", ["11.2_one_at_a_time.ipynb", "11.4_parameter_interactions.ipynb"]
+)
+def test_noise_comparisons_select_the_current_baseline_cohort(name: str) -> None:
+    """Catch recursive baseline discovery silently mixing profiles or stale code/data."""
+    source = _source(name)
+
+    assert "select_matched_baseline_runs" in source
+    assert "expected_scenarios=SCENARIOS" in source
+    assert "expected_seeds=SEEDS" in source
+
+
+def test_interaction_notebook_reports_residual_magnitude_relative_to_noise() -> None:
+    """Catch Notebook 11.4 displaying residual surfaces without a magnitude table."""
+    source = _source("11.4_parameter_interactions.ipynb")
+
+    assert "summarize_interaction_noise" in source
+    assert "max_abs_residual_to_noise" in source
+    assert "rms_residual_to_noise" in source
 
 
 def test_full_sensitivity_seed_configuration_includes_reproduction_seed() -> None:

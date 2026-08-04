@@ -6,7 +6,7 @@ from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr
+from scipy.stats import spearmanr, t
 
 from .config import GLOBAL_BOUNDS
 
@@ -20,7 +20,8 @@ def _require_columns(frame: pd.DataFrame, columns: Sequence[str], label: str) ->
 
 
 def _mean_interval(summary: pd.DataFrame) -> pd.DataFrame:
-    half_width = 1.96 * summary["sd"] / np.sqrt(summary["n_seeds"])
+    critical_values = t.ppf(0.975, summary["n_seeds"] - 1)
+    half_width = critical_values * summary["sd"] / np.sqrt(summary["n_seeds"])
     return summary.assign(
         ci95_low=summary["mean"] - half_width,
         ci95_high=summary["mean"] + half_width,
@@ -45,6 +46,66 @@ def summarize_baseline(
     if summary.empty or summary["n_seeds"].lt(2).any():
         raise ValueError("Baseline summaries require at least two seeds per scenario and outcome")
     return _mean_interval(summary)
+
+
+def select_matched_baseline_runs(
+    candidates: pd.DataFrame,
+    reference_runs: pd.DataFrame,
+    *,
+    expected_scenarios: Sequence[str],
+    expected_seeds: Sequence[int],
+) -> pd.DataFrame:
+    """Select one complete baseline cohort matching current code, data, and profile."""
+    identity_columns = ["profile", "input_fingerprint", "code_fingerprint"]
+    _require_columns(reference_runs, identity_columns, "Reference runs")
+    _require_columns(
+        candidates,
+        ["scenario", "seed", *identity_columns],
+        "Baseline candidates",
+    )
+    identity: dict[str, object] = {}
+    for column in identity_columns:
+        values = reference_runs[column].dropna().unique()
+        if len(values) != 1:
+            raise ValueError(
+                f"Reference runs must identify exactly one {column}; got {len(values)}"
+            )
+        identity[column] = values[0]
+
+    scenarios = tuple(str(scenario) for scenario in expected_scenarios)
+    seeds = tuple(int(seed) for seed in expected_seeds)
+    if not scenarios or not seeds:
+        raise ValueError("Expected baseline scenarios and seeds must be non-empty")
+    matched = candidates.copy()
+    for column, value in identity.items():
+        matched = matched.loc[matched[column].eq(value)]
+    matched = matched.loc[
+        matched["scenario"].astype(str).isin(scenarios)
+        & matched["seed"].astype(int).isin(seeds)
+    ].copy()
+    key_columns = ["scenario", "seed"]
+    if matched.duplicated(key_columns).any():
+        duplicates = matched.loc[matched.duplicated(key_columns, keep=False), key_columns]
+        raise ValueError(
+            "Matched cohort contains duplicate baseline execution keys: "
+            f"{duplicates.drop_duplicates().to_dict('records')}"
+        )
+    expected_keys = {(scenario, seed) for scenario in scenarios for seed in seeds}
+    actual_keys = set(
+        zip(matched["scenario"].astype(str), matched["seed"].astype(int), strict=True)
+    )
+    missing = sorted(expected_keys.difference(actual_keys))
+    if missing:
+        raise ValueError(f"Matched cohort is missing baseline execution keys: {missing}")
+    scenario_order = {scenario: index for index, scenario in enumerate(scenarios)}
+    seed_order = {seed: index for index, seed in enumerate(seeds)}
+    matched["_scenario_order"] = matched["scenario"].astype(str).map(scenario_order)
+    matched["_seed_order"] = matched["seed"].astype(int).map(seed_order)
+    return (
+        matched.sort_values(["_scenario_order", "_seed_order"])
+        .drop(columns=["_scenario_order", "_seed_order"])
+        .reset_index(drop=True)
+    )
 
 
 def summarize_oat(
@@ -212,3 +273,62 @@ def estimate_interaction_surface(
         - surface["y"].map(y_effect)
     )
     return surface[["x", "y", "mean", "sd", "n_seeds", "interaction_residual"]]
+
+
+def summarize_interaction_noise(
+    interaction_runs: pd.DataFrame,
+    baseline_runs: pd.DataFrame,
+    outcomes: Sequence[str],
+) -> pd.DataFrame:
+    """Compare tested interaction residual magnitude with matched baseline noise."""
+    _require_columns(
+        interaction_runs,
+        [
+            "scenario",
+            "parameter_x",
+            "parameter_y",
+            "value_x",
+            "value_y",
+            *outcomes,
+        ],
+        "Interaction runs",
+    )
+    _require_columns(baseline_runs, ["scenario", *outcomes], "Baseline runs")
+    rows: list[dict[str, object]] = []
+    for (scenario, parameter_x, parameter_y), group in interaction_runs.groupby(
+        ["scenario", "parameter_x", "parameter_y"], sort=False
+    ):
+        for outcome in outcomes:
+            surface = estimate_interaction_surface(group, outcome)
+            absolute_residuals = surface["interaction_residual"].abs()
+            maximum = float(absolute_residuals.max())
+            rms = float(np.sqrt(np.mean(np.square(surface["interaction_residual"]))))
+            baseline_values = baseline_runs.loc[
+                baseline_runs["scenario"].eq(scenario), outcome
+            ]
+            if baseline_values.count() < 2:
+                raise ValueError(
+                    f"Interaction noise comparison requires at least two matched "
+                    f"baseline seeds for {scenario}/{outcome}"
+                )
+            baseline_sd = float(baseline_values.std())
+            rows.append(
+                {
+                    "scenario": scenario,
+                    "parameter_x": parameter_x,
+                    "parameter_y": parameter_y,
+                    "outcome": outcome,
+                    "max_abs_interaction_residual": maximum,
+                    "rms_interaction_residual": rms,
+                    "baseline_sd": baseline_sd,
+                    "max_abs_residual_to_noise": _effect_to_noise(maximum, baseline_sd),
+                    "rms_residual_to_noise": _effect_to_noise(rms, baseline_sd),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _effect_to_noise(effect: float, noise: float) -> float:
+    if noise != 0.0:
+        return effect / noise
+    return 0.0 if effect == 0.0 else np.inf

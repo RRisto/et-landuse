@@ -11,7 +11,9 @@ import matplotlib.pyplot as plt
 from estonia_landuse.sensitivity.analysis import (
     estimate_interaction_surface,
     rank_parameter_importance,
+    select_matched_baseline_runs,
     summarize_baseline,
+    summarize_interaction_noise,
     summarize_oat,
 )
 from estonia_landuse.sensitivity.config import GLOBAL_BOUNDS
@@ -27,22 +29,22 @@ def test_baseline_summary_reports_empirical_mean_sd_and_95pct_interval() -> None
     """Catch baseline reporting that omits stochastic spread or misstates its CI."""
     runs = pd.DataFrame(
         {
-            "scenario": ["balanced"] * 4,
-            "seed": [1, 2, 3, 4],
-            "carbon_gain": [1.0, 2.0, 3.0, 4.0],
+            "scenario": ["balanced"] * 3,
+            "seed": [1, 2, 3],
+            "carbon_gain": [1.0, 2.0, 3.0],
         }
     )
 
     summary = summarize_baseline(runs, outcomes=("carbon_gain",))
 
     row = summary.iloc[0]
-    expected_sd = np.std([1.0, 2.0, 3.0, 4.0], ddof=1)
-    expected_half_width = 1.96 * expected_sd / 2.0
-    assert row["mean"] == pytest.approx(2.5)
+    expected_sd = np.std([1.0, 2.0, 3.0], ddof=1)
+    expected_half_width = 4.30265273 * expected_sd / np.sqrt(3.0)
+    assert row["mean"] == pytest.approx(2.0)
     assert row["sd"] == pytest.approx(expected_sd)
-    assert row["ci95_low"] == pytest.approx(2.5 - expected_half_width)
-    assert row["ci95_high"] == pytest.approx(2.5 + expected_half_width)
-    assert row["n_seeds"] == 4
+    assert row["ci95_low"] == pytest.approx(2.0 - expected_half_width)
+    assert row["ci95_high"] == pytest.approx(2.0 + expected_half_width)
+    assert row["n_seeds"] == 3
 
 
 def test_oat_range_uses_parameter_value_means_before_comparing_with_noise() -> None:
@@ -67,6 +69,8 @@ def test_oat_range_uses_parameter_value_means_before_comparing_with_noise() -> N
     curves, effects = summarize_oat(oat, baseline, outcomes=("carbon_gain",))
 
     assert curves["mean"].tolist() == [5.0, 9.0, 13.0]
+    assert curves.loc[0, "ci95_low"] == pytest.approx(5.0 - 12.706204736 * 5.0)
+    assert curves.loc[0, "ci95_high"] == pytest.approx(5.0 + 12.706204736 * 5.0)
     effect = effects.iloc[0]
     assert effect["effect_range"] == pytest.approx(8.0)
     assert effect["baseline_sd"] == pytest.approx(2.0)
@@ -118,6 +122,119 @@ def test_interaction_residual_removes_additive_main_effects() -> None:
 
     assert surface["interaction_residual"].abs().max() == pytest.approx(0.0)
     assert surface["mean"].tolist() == pytest.approx([0.0, 12.0, 2.0, 14.0, 4.0, 16.0])
+
+
+def test_matched_baseline_selection_rejects_mixed_profiles_and_stale_cohorts() -> None:
+    """Catch test/full or stale baseline artifacts entering a current analysis cohort."""
+    reference = pd.DataFrame(
+        {
+            "profile": ["full"],
+            "input_fingerprint": ["input-current"],
+            "code_fingerprint": ["code-current"],
+        }
+    )
+    candidates = pd.DataFrame(
+        [
+            {
+                "scenario": "balanced",
+                "seed": seed,
+                "profile": profile,
+                "input_fingerprint": input_fingerprint,
+                "code_fingerprint": code_fingerprint,
+                "cost": float(seed),
+            }
+            for seed, profile, input_fingerprint, code_fingerprint in (
+                (42, "full", "input-current", "code-current"),
+                (73, "full", "input-current", "code-current"),
+                (101, "full", "input-current", "code-current"),
+                (0, "test", "input-current", "code-current"),
+                (42, "screen", "input-current", "code-current"),
+                (73, "full", "input-stale", "code-current"),
+                (101, "full", "input-current", "code-stale"),
+            )
+        ]
+    )
+
+    matched = select_matched_baseline_runs(
+        candidates,
+        reference,
+        expected_scenarios=("balanced",),
+        expected_seeds=(42, 73, 101),
+    )
+
+    assert matched[["scenario", "seed"]].to_records(index=False).tolist() == [
+        ("balanced", 42),
+        ("balanced", 73),
+        ("balanced", 101),
+    ]
+    assert matched["profile"].eq("full").all()
+
+
+def test_matched_baseline_selection_rejects_missing_or_duplicate_execution_keys() -> None:
+    """Catch partial or ambiguous baseline cohorts being treated as matched noise."""
+    reference = pd.DataFrame(
+        {
+            "profile": ["test"],
+            "input_fingerprint": ["input"],
+            "code_fingerprint": ["code"],
+        }
+    )
+    one = pd.DataFrame(
+        {
+            "scenario": ["balanced"],
+            "seed": [0],
+            "profile": ["test"],
+            "input_fingerprint": ["input"],
+            "code_fingerprint": ["code"],
+        }
+    )
+
+    with pytest.raises(ValueError, match="missing baseline execution keys"):
+        select_matched_baseline_runs(
+            one,
+            reference,
+            expected_scenarios=("balanced",),
+            expected_seeds=(0, 1),
+        )
+    with pytest.raises(ValueError, match="duplicate baseline execution keys"):
+        select_matched_baseline_runs(
+            pd.concat([one, one], ignore_index=True),
+            reference,
+            expected_scenarios=("balanced",),
+            expected_seeds=(0,),
+        )
+
+
+def test_interaction_noise_reports_max_and_rms_residual_over_baseline_sd() -> None:
+    """Catch tested interaction magnitude being shown without optimizer-noise context."""
+    interaction = pd.DataFrame(
+        [
+            {
+                "scenario": "balanced",
+                "parameter_x": "x",
+                "parameter_y": "y",
+                "value_x": x,
+                "value_y": y,
+                "seed": seed,
+                "cost": x + y + 4 * x * y + seed_noise,
+            }
+            for x in (0.0, 1.0)
+            for y in (0.0, 1.0)
+            for seed, seed_noise in ((0, -0.5), (1, 0.5))
+        ]
+    )
+    baseline = pd.DataFrame(
+        {"scenario": ["balanced", "balanced"], "seed": [0, 1], "cost": [-1.0, 1.0]}
+    )
+
+    summary = summarize_interaction_noise(interaction, baseline, outcomes=("cost",))
+
+    row = summary.iloc[0]
+    assert row["max_abs_interaction_residual"] == pytest.approx(1.0)
+    assert row["rms_interaction_residual"] == pytest.approx(1.0)
+    assert row["baseline_sd"] == pytest.approx(np.sqrt(2.0))
+    assert row["max_abs_residual_to_noise"] == pytest.approx(1 / np.sqrt(2.0))
+    assert row["rms_residual_to_noise"] == pytest.approx(1 / np.sqrt(2.0))
 
 
 @pytest.mark.parametrize(
