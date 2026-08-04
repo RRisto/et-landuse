@@ -20,6 +20,10 @@ MODERNIZED_NOTEBOOKS = [
     "05_compare_carbon_models.ipynb",
     "06_download_forest_registry.ipynb",
     "07_fetch_forest_details.ipynb",
+    "11.1_stochastic_baseline.ipynb",
+    "11.2_one_at_a_time.ipynb",
+    "11.3_global_sensitivity.ipynb",
+    "11.4_parameter_interactions.ipynb",
 ]
 
 
@@ -312,3 +316,39 @@ def test_fast_scenario_reproduction_notebook_contract() -> None:
     assert "10_scenario_comparison.ipynb" not in source
     assert "nbconvert" not in source
     assert "data/processed/learned_carbon/scenario_summary.parquet" not in source
+
+
+SENSITIVITY_NOTEBOOKS = (
+    "11.1_stochastic_baseline.ipynb",
+    "11.2_one_at_a_time.ipynb",
+    "11.3_global_sensitivity.ipynb",
+    "11.4_parameter_interactions.ipynb",
+)
+
+
+@pytest.mark.parametrize("name", SENSITIVITY_NOTEBOOKS)
+def test_historical_sensitivity_notebooks_share_execution_contract(name: str) -> None:
+    """Catch analysis notebooks bypassing the resumable historical runner."""
+    source = _source(name)
+
+    assert "from estonia_landuse.sensitivity.runner import run_manifest" in source
+    assert "PROFILE = os.environ.get(\"SENSITIVITY_PROFILE\", \"test\")" in source
+    assert "SENSITIVITY_N_WORKERS" in source
+    assert "SENSITIVITY_OVERWRITE" in source
+    assert "SENSITIVITY_OUTPUT_ROOT" in source
+    assert "SENSITIVITY_FEATURES_PATH" in source
+    assert "DEFAULT_SEEDS[PROFILE]" in source
+    assert "manifest_run_count(manifest)" in source
+    assert "manifest.head(" in source
+    assert "run_manifest(" in source
+    assert "progress=" in source
+    assert "data/processed/legacy_sensitivity" in source
+    assert "data/processed/sensitivity" not in source
+    assert "10_scenario_comparison.ipynb" not in source
+
+
+def test_full_sensitivity_seed_configuration_includes_reproduction_seed() -> None:
+    """Catch full analysis notebooks losing the historical reproduction seed."""
+    from estonia_landuse.sensitivity.config import DEFAULT_SEEDS
+
+    assert 42 in DEFAULT_SEEDS["full"]

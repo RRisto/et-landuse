@@ -987,6 +987,8 @@ dev = [
     { name = "rasterio", version = "1.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "requests" },
     { name = "ruff" },
+    { name = "scikit-learn", version = "1.7.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scikit-learn", version = "1.9.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "shapely" },
 ]
 ml = [
@@ -1069,6 +1071,7 @@ requires-dist = [
     { name = "requests", marker = "extra == 'pipeline'", specifier = ">=2.31.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9.0" },
     { name = "scikit-learn", marker = "extra == 'all'", specifier = ">=1.7.2" },
+    { name = "scikit-learn", marker = "extra == 'dev'", specifier = ">=1.7.2" },
     { name = "scikit-learn", marker = "extra == 'pipeline'", specifier = ">=1.7.2" },
     { name = "scipy", specifier = ">=1.11.0" },
     { name = "shapely", marker = "extra == 'all'", specifier = ">=2.0.0" },
