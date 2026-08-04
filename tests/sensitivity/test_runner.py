@@ -428,17 +428,18 @@ def test_invalid_artifact_key_becomes_a_terminal_row_failure(
     assert not (tmp_path / "unsafe").exists()
 
 
-def test_sequential_runner_rejects_parallel_workers(
+def test_sequential_runner_accepts_explicit_single_worker(
     tmp_path: Path,
     runner_context: pd.DataFrame,
 ) -> None:
-    """Catch Task 3 silently pretending to support parent-safe parallelism."""
-    with pytest.raises(ValueError, match="n_workers=1"):
-        run_manifest(
-            runner_context,
-            ["wetland_suitability"],
-            pd.DataFrame([_row()]),
-            tmp_path,
-            "test",
-            n_workers=2,
-        )
+    """Catch the compatibility path rejecting its explicit worker count."""
+    result = run_manifest(
+        runner_context,
+        ["wetland_suitability"],
+        pd.DataFrame([_row()]),
+        tmp_path,
+        "test",
+        n_workers=1,
+    )
+
+    assert list(result["status"]) == ["completed"]
