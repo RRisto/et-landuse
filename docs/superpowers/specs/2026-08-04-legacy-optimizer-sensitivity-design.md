@@ -37,7 +37,8 @@ A focused sensitivity package under `src/estonia_landuse/sensitivity/` will adap
 
 The adapter will:
 
-- obtain scenario configurations from the same shared scenario definitions used by Notebook 10;
+- obtain scenario configurations from a historical adapter whose outputs are contract-tested
+  against Notebook 10's unchanged inline configuration cell;
 - call the historical trainer with an explicit integer `seed`;
 - retain historical constraint-dominance;
 - evaluate rank-zero policies using the historical reporting fields;
@@ -96,7 +97,8 @@ Screening results identify parameters worth confirming but must remain labelled 
 
 - Runs all six historical scenarios with seed 42.
 - Executes scenarios in parallel when more than one worker is configured.
-- Uses the exact Notebook 10 configurations and representative rules.
+- Uses configurations proven equivalent to Notebook 10's inline definitions and the same
+  representative rules.
 - Compares the resulting summary with Notebook 10's saved reference summary.
 - Writes to a new versioned sensitivity output root and never overwrites Notebook 10 outputs.
 
