@@ -46,6 +46,14 @@ The adapter will:
 - realize and save the selected target fractions;
 - store scenario configuration, input, code, profile, seed, and selection metadata with each artifact.
 
+The historical configuration adapter is intentionally a literal reproduction of the six Notebook 10
+scenario branches. It always starts from a fresh `default_config()`, sets `carbon_model="learned"`,
+and rejects unknown scenario IDs rather than silently returning the base configuration. In particular,
+the wetland-priority and sustainable-agriculture scenarios retain their distinct
+`optimization.fourth_objective` values (`wetland_gain_pct` and `agriculture_gain_pct`), while the
+balanced scenario preserves `max_changed_pct=0.20`. Scenario labels and representative-selection
+rules are copied from the same Notebook 10 cell and contract-tested with the notebook SHA guard.
+
 ### Parallel execution
 
 Parallelism will occur across independent optimizer runs, not inside one evolutionary trajectory. A parent process will own manifests, progress reporting, and status writes. Worker processes will receive immutable context once at initialization and return one terminal result per run.
