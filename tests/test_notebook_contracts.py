@@ -24,6 +24,7 @@ MODERNIZED_NOTEBOOKS = [
     "11.2_one_at_a_time.ipynb",
     "11.3_global_sensitivity.ipynb",
     "11.4_parameter_interactions.ipynb",
+    "11.5_biodiversity_robustness.ipynb",
 ]
 
 
@@ -323,6 +324,7 @@ SENSITIVITY_NOTEBOOKS = (
     "11.2_one_at_a_time.ipynb",
     "11.3_global_sensitivity.ipynb",
     "11.4_parameter_interactions.ipynb",
+    "11.5_biodiversity_robustness.ipynb",
 )
 
 
@@ -376,3 +378,20 @@ def test_full_sensitivity_seed_configuration_includes_reproduction_seed() -> Non
     from estonia_landuse.sensitivity.config import DEFAULT_SEEDS
 
     assert 42 in DEFAULT_SEEDS["full"]
+
+
+def test_robustness_notebook_reuses_artifacts_and_schedules_only_missing_runs() -> None:
+    source = _source("11.5_biodiversity_robustness.ipynb")
+
+    assert "current_artifact_identity(context, feature_columns, PROFILE)" in source
+    assert "inventory_artifacts(OUTPUT_ROOT, PROFILE, expected_identity=expected_identity)" in source
+    assert "missing_manifest_rows(manifest, inventory)" in source
+    assert "planned_new_runs" in source
+    assert "Planned new biodiversity runs" in source
+    assert "build_robustness_report(" in source
+    assert "OUTPUT_ROOT, REPORT_DIR, PROFILE, expected_identity=expected_identity" in source
+    assert 'report_paths["completeness"]' in source
+    assert 'report_paths["conclusions"]' in source
+    assert "stable" in source.lower()
+    assert "unstable" in source.lower()
+    assert "unavailable" in source.lower()
