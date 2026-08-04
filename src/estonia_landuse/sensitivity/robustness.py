@@ -11,9 +11,15 @@ from zipfile import BadZipFile
 import numpy as np
 import pandas as pd
 
-from .analysis import estimate_interaction_surface, rank_parameter_importance
+from .analysis import rank_parameter_importance, summarize_interaction_noise
 from .historical_model import SCENARIO_LABELS
-from .runner import ARTIFACT_SCHEMA_VERSION, _code_fingerprint, _input_fingerprint
+from .runner import (
+    ARTIFACT_SCHEMA_VERSION,
+    _canonical_json,
+    _code_fingerprint,
+    _input_fingerprint,
+    _manifest_design,
+)
 from .sampling import EXECUTION_KEY_COLUMNS
 
 IDENTITY_COLUMNS = (
@@ -32,6 +38,17 @@ ARTIFACT_IDENTITY_COLUMNS = (
 EXPERIMENTS = ("baseline", "oat", "global", "interactions", "biodiversity")
 LAND_USES = ("forest", "wetland", "agriculture", "grassland")
 OUTCOMES = ("biodiversity_gain", "carbon_gain", "cost", "changed_pct")
+MIN_HELD_OUT_R2 = 0.25
+PERMUTATION_UNCERTAINTY_Z = 2.0
+MAX_INTERACTION_TO_BASELINE_NOISE = 1.0
+_POST_RUN_MANIFEST_FIELDS = (
+    "worker_pid",
+    "training_seconds",
+    "optimizer_cpu_seconds",
+    "front_evaluation_seconds",
+    "artifact_writing_seconds",
+    "total_duration_seconds",
+)
 
 
 @dataclass(frozen=True)
@@ -139,6 +156,110 @@ def inventory_artifacts(
     return ArtifactInventory(complete=complete, incomplete=incomplete, identity=identity)
 
 
+def _manifest_row_design_json(row: pd.Series | dict[str, object]) -> str:
+    values = row.to_dict() if isinstance(row, pd.Series) else dict(row)
+    overrides = values.get("overrides")
+    if isinstance(overrides, str):
+        try:
+            values["overrides"] = json.loads(overrides)
+        except json.JSONDecodeError:
+            pass
+    # These columns are initialized to None before runner metadata is computed,
+    # then filled only after the artifact pair has been written.
+    for field in _POST_RUN_MANIFEST_FIELDS:
+        values[field] = None
+    return _canonical_json(_manifest_design(values))
+
+
+def _latest_manifests(
+    output_root: Path, profile: str
+) -> dict[str, pd.DataFrame]:
+    manifests: dict[str, pd.DataFrame] = {}
+    for experiment in EXPERIMENTS:
+        path = output_root / "manifests" / f"{experiment}.csv"
+        if not path.exists():
+            continue
+        frame = pd.read_csv(path)
+        required = {*EXECUTION_KEY_COLUMNS, "profile"}
+        if not required.issubset(frame.columns):
+            continue
+        frame = frame.loc[frame["profile"].astype(str).eq(profile)].copy()
+        if frame.empty:
+            continue
+        if frame.duplicated(list(EXECUTION_KEY_COLUMNS)).any():
+            raise ValueError(f"latest {experiment} manifest contains duplicate execution keys")
+        frame["manifest_design_json"] = [
+            _manifest_row_design_json(row) for _, row in frame.iterrows()
+        ]
+        manifests[experiment] = frame.reset_index(drop=True)
+    return manifests
+
+
+def _filter_to_latest_manifests(
+    artifacts: pd.DataFrame,
+    manifests: dict[str, pd.DataFrame],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if artifacts.empty:
+        return artifacts.copy(), pd.DataFrame()
+    expected: dict[tuple[object, ...], str] = {}
+    for manifest in manifests.values():
+        for row in manifest.to_dict("records"):
+            key = tuple(row[column] for column in EXECUTION_KEY_COLUMNS)
+            expected[key] = str(row["manifest_design_json"])
+    compatible_rows: list[dict[str, object]] = []
+    excluded_rows: list[dict[str, object]] = []
+    for row in artifacts.to_dict("records"):
+        key = tuple(row[column] for column in EXECUTION_KEY_COLUMNS)
+        expected_design = expected.get(key)
+        if expected_design is None:
+            excluded_rows.append(row | {"reason": "not_in_latest_manifest"})
+        elif row.get("manifest_design_json") != expected_design:
+            excluded_rows.append(row | {"reason": "manifest_design_mismatch"})
+        else:
+            compatible_rows.append(row)
+    compatible = pd.DataFrame(compatible_rows, columns=artifacts.columns)
+    excluded = pd.DataFrame(excluded_rows)
+    return compatible, excluded
+
+
+def _comparison_group_report(
+    manifest: pd.DataFrame | None, artifacts: pd.DataFrame
+) -> pd.DataFrame:
+    columns = (
+        "comparison_key",
+        "sample_id",
+        "seed",
+        "expected_scenarios",
+        "complete_scenarios",
+        "missing_scenarios",
+        "status",
+    )
+    if manifest is None or manifest.empty:
+        return pd.DataFrame(columns=columns)
+    rows: list[dict[str, object]] = []
+    for (sample_id, seed), expected_group in manifest.groupby(
+        ["sample_id", "seed"], sort=False
+    ):
+        expected = tuple(sorted(expected_group["scenario"].astype(str).unique()))
+        actual_group = artifacts.loc[
+            artifacts["sample_id"].eq(sample_id) & artifacts["seed"].eq(seed)
+        ] if not artifacts.empty else artifacts
+        actual = tuple(sorted(actual_group["scenario"].astype(str).unique())) if not actual_group.empty else ()
+        missing = tuple(sorted(set(expected).difference(actual)))
+        rows.append(
+            {
+                "comparison_key": f"{sample_id}|seed={int(seed)}",
+                "sample_id": sample_id,
+                "seed": int(seed),
+                "expected_scenarios": json.dumps(expected),
+                "complete_scenarios": json.dumps(actual),
+                "missing_scenarios": json.dumps(missing),
+                "status": "complete" if not missing and set(actual) == set(expected) else "excluded",
+            }
+        )
+    return pd.DataFrame(rows, columns=columns)
+
+
 def missing_manifest_rows(
     manifest: pd.DataFrame, inventory: ArtifactInventory
 ) -> pd.DataFrame:
@@ -148,16 +269,19 @@ def missing_manifest_rows(
         raise ValueError(f"manifest missing execution keys: {sorted(missing)}")
     if inventory.complete.empty:
         return manifest.copy().reset_index(drop=True)
-    completed = inventory.complete[list(EXECUTION_KEY_COLUMNS)].drop_duplicates()
-    marked = manifest.merge(
-        completed.assign(_already_complete=True),
-        on=list(EXECUTION_KEY_COLUMNS),
-        how="left",
-        validate="many_to_one",
-    )
-    return marked.loc[marked["_already_complete"].isna()].drop(
-        columns="_already_complete"
-    ).reset_index(drop=True)
+    completed = inventory.complete.copy()
+    if "manifest_design_json" not in completed:
+        return manifest.copy().reset_index(drop=True)
+    completed_by_key = {
+        tuple(row[column] for column in EXECUTION_KEY_COLUMNS): row["manifest_design_json"]
+        for row in completed.to_dict("records")
+    }
+    missing_positions: list[int] = []
+    for position, row in manifest.iterrows():
+        key = tuple(row[column] for column in EXECUTION_KEY_COLUMNS)
+        if completed_by_key.get(key) != _manifest_row_design_json(row):
+            missing_positions.append(position)
+    return manifest.loc[missing_positions].reset_index(drop=True)
 
 
 def summarize_scenario_rank_stability(
@@ -271,16 +395,6 @@ def _load_target_records(artifacts: pd.DataFrame) -> pd.DataFrame:
     return pd.concat(records, ignore_index=True) if records else pd.DataFrame()
 
 
-def _expected_count(output_root: Path, experiment: str, profile: str) -> int | None:
-    path = output_root / "manifests" / f"{experiment}.csv"
-    if not path.exists():
-        return None
-    manifest = pd.read_csv(path)
-    if "profile" not in manifest or "status" not in manifest:
-        return None
-    return int(manifest["profile"].astype(str).eq(profile).sum())
-
-
 def _write_frame(frame: pd.DataFrame, path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(path, index=False, lineterminator="\n")
@@ -290,6 +404,42 @@ def _write_frame(frame: pd.DataFrame, path: Path) -> Path:
 def _conclusion(available: bool, stable: bool) -> str:
     if not available:
         return "unavailable"
+    return "stable" if stable else "unstable"
+
+
+def classify_parameter_importance(frame: pd.DataFrame) -> str:
+    """Apply prespecified fit, rank-consistency, and uncertainty gates."""
+    required = {
+        "held_out_r2",
+        "top_parameter_rank_consistent",
+        "top_parameter_uncertainty_pass",
+        "model_fit_pass",
+    }
+    if frame.empty or not required.issubset(frame.columns):
+        return "unavailable"
+    stable = bool(
+        frame[
+            [
+                "top_parameter_rank_consistent",
+                "top_parameter_uncertainty_pass",
+                "model_fit_pass",
+            ]
+        ].all(axis=None)
+        and frame["held_out_r2"].ge(MIN_HELD_OUT_R2).all()
+    )
+    return "stable" if stable else "unstable"
+
+
+def classify_interactions(frame: pd.DataFrame) -> str:
+    """Classify interaction residuals relative to matched baseline seed noise."""
+    if frame.empty or "max_abs_residual_to_noise" not in frame:
+        return "unavailable"
+    stable = bool(
+        frame["max_abs_residual_to_noise"].notna().all()
+        and frame["max_abs_residual_to_noise"].le(
+            MAX_INTERACTION_TO_BASELINE_NOISE
+        ).all()
+    )
     return "stable" if stable else "unstable"
 
 
@@ -309,12 +459,16 @@ def build_robustness_report(
     destination = Path(report_dir)
     destination.mkdir(parents=True, exist_ok=True)
     inventory = inventory_artifacts(root, profile, expected_identity=expected_identity)
-    complete = inventory.complete
+    manifests = _latest_manifests(root, profile)
+    complete, manifest_exclusions = _filter_to_latest_manifests(
+        inventory.complete, manifests
+    )
 
     completeness_rows: list[dict[str, object]] = []
     for experiment in EXPERIMENTS:
         completed = 0 if complete.empty else int(complete["experiment"].eq(experiment).sum())
-        expected = _expected_count(root, experiment, profile)
+        expected_manifest = manifests.get(experiment)
+        expected = len(expected_manifest) if expected_manifest is not None else None
         missing = None if expected is None else max(expected - completed, 0)
         availability = (
             "unavailable" if expected is None and completed == 0
@@ -337,25 +491,32 @@ def build_robustness_report(
         complete.loc[complete["experiment"].eq("biodiversity")].copy()
         if not complete.empty else pd.DataFrame()
     )
-    expected_scenarios: tuple[str, ...] = tuple(SCENARIO_LABELS)
-    biodiversity_manifest = root / "manifests" / "biodiversity.csv"
-    if biodiversity_manifest.exists():
-        manifest = pd.read_csv(biodiversity_manifest)
-        cohort = manifest.loc[manifest.get("profile", pd.Series(dtype=str)).astype(str).eq(profile)]
-        if not cohort.empty:
-            expected_scenarios = tuple(dict.fromkeys(cohort["scenario"].astype(str)))
+    biodiversity_manifest = manifests.get("biodiversity")
+    expected_scenarios = (
+        tuple(dict.fromkeys(biodiversity_manifest["scenario"].astype(str)))
+        if biodiversity_manifest is not None
+        else tuple(SCENARIO_LABELS)
+    )
+    comparison_groups = _comparison_group_report(biodiversity_manifest, biodiversity)
+    excluded_groups = comparison_groups.loc[comparison_groups["status"].eq("excluded")]
+    complete_rank_evidence = (
+        not comparison_groups.empty
+        and excluded_groups.empty
+        and len(expected_scenarios) >= 2
+    )
     rank_tables: list[pd.DataFrame] = []
-    for outcome in OUTCOMES:
-        if biodiversity.empty or outcome not in biodiversity:
-            continue
-        ranking = summarize_scenario_rank_stability(
-            biodiversity,
-            outcome,
-            expected_scenarios=expected_scenarios,
-            higher_is_better=outcome not in {"cost", "changed_pct"},
-        )
-        if not ranking.empty:
-            rank_tables.append(ranking.assign(outcome=outcome))
+    if complete_rank_evidence:
+        for outcome in OUTCOMES:
+            if biodiversity.empty or outcome not in biodiversity:
+                continue
+            ranking = summarize_scenario_rank_stability(
+                biodiversity,
+                outcome,
+                expected_scenarios=expected_scenarios,
+                higher_is_better=outcome not in {"cost", "changed_pct"},
+            )
+            if not ranking.empty:
+                rank_tables.append(ranking.assign(outcome=outcome))
     rank_stability = pd.concat(rank_tables, ignore_index=True) if rank_tables else pd.DataFrame(
         columns=("scenario", "first_place_frequency", "median_rank", "comparison_count", "outcome")
     )
@@ -379,15 +540,42 @@ def build_robustness_report(
         if not complete.empty else pd.DataFrame()
     )
     importance_tables: list[pd.DataFrame] = []
-    if not global_runs.empty:
-        for outcome in OUTCOMES:
-            if outcome not in global_runs:
-                continue
-            try:
-                ranked = rank_parameter_importance(global_runs, outcome)
-            except (ImportError, ValueError):
-                continue
-            importance_tables.append(ranked.assign(outcome=outcome))
+    global_complete = completeness.set_index("experiment").loc["global", "availability"] == "complete"
+    if global_complete and not global_runs.empty:
+        for scenario, scenario_runs in global_runs.groupby("scenario", sort=False):
+            for outcome in OUTCOMES:
+                if outcome not in scenario_runs:
+                    continue
+                try:
+                    ranked = rank_parameter_importance(scenario_runs, outcome)
+                except (ImportError, ValueError):
+                    continue
+                held_out_r2 = float(ranked.attrs["held_out_r2"])
+                top_permutation = ranked.loc[
+                    ranked["permutation_importance_mean"].idxmax(), "parameter"
+                ]
+                top_spearman = ranked.loc[
+                    ranked["spearman_rho"].abs().idxmax(), "parameter"
+                ]
+                top_row = ranked.loc[ranked["parameter"].eq(top_permutation)].iloc[0]
+                uncertainty_pass = bool(
+                    top_row["permutation_importance_mean"]
+                    - PERMUTATION_UNCERTAINTY_Z * top_row["permutation_importance_sd"]
+                    > 0.0
+                )
+                rank_consistent = bool(top_permutation == top_spearman)
+                model_fit_pass = bool(held_out_r2 >= MIN_HELD_OUT_R2)
+                importance_tables.append(
+                    ranked.assign(
+                        scenario=scenario,
+                        outcome=outcome,
+                        held_out_r2=held_out_r2,
+                        min_held_out_r2=MIN_HELD_OUT_R2,
+                        top_parameter_rank_consistent=rank_consistent,
+                        top_parameter_uncertainty_pass=uncertainty_pass,
+                        model_fit_pass=model_fit_pass,
+                    )
+                )
     parameter_importance = (
         pd.concat(importance_tables, ignore_index=True)
         if importance_tables
@@ -398,7 +586,13 @@ def build_robustness_report(
                 "random_forest_importance",
                 "permutation_importance_mean",
                 "permutation_importance_sd",
+                "scenario",
                 "outcome",
+                "held_out_r2",
+                "min_held_out_r2",
+                "top_parameter_rank_consistent",
+                "top_parameter_uncertainty_pass",
+                "model_fit_pass",
             )
         )
     )
@@ -407,29 +601,12 @@ def build_robustness_report(
         complete.loc[complete["experiment"].eq("interactions")].copy()
         if not complete.empty else pd.DataFrame()
     )
-    interaction_rows: list[dict[str, object]] = []
-    required_interaction = {"parameter_x", "parameter_y", "value_x", "value_y"}
-    if not interaction_runs.empty and required_interaction.issubset(interaction_runs.columns):
-        for (scenario, parameter_x, parameter_y), group in interaction_runs.groupby(
-            ["scenario", "parameter_x", "parameter_y"], sort=False
-        ):
-            for outcome in OUTCOMES:
-                try:
-                    surface = estimate_interaction_surface(group, outcome)
-                except ValueError:
-                    continue
-                interaction_rows.append(
-                    {
-                        "scenario": scenario,
-                        "parameter_x": parameter_x,
-                        "parameter_y": parameter_y,
-                        "outcome": outcome,
-                        "max_abs_interaction_residual": float(surface["interaction_residual"].abs().max()),
-                        "rms_interaction_residual": float(np.sqrt(np.mean(np.square(surface["interaction_residual"])))),
-                    }
-                )
+    baseline_runs = (
+        complete.loc[complete["experiment"].eq("baseline")].copy()
+        if not complete.empty
+        else pd.DataFrame()
+    )
     interactions = pd.DataFrame(
-        interaction_rows,
         columns=(
             "scenario",
             "parameter_x",
@@ -437,7 +614,33 @@ def build_robustness_report(
             "outcome",
             "max_abs_interaction_residual",
             "rms_interaction_residual",
+            "baseline_sd",
+            "max_abs_residual_to_noise",
+            "rms_residual_to_noise",
         ),
+    )
+    interaction_evidence_complete = all(
+        completeness.set_index("experiment").loc[name, "availability"] == "complete"
+        for name in ("baseline", "interactions")
+    )
+    if interaction_evidence_complete and not interaction_runs.empty and not baseline_runs.empty:
+        try:
+            interactions = summarize_interaction_noise(
+                interaction_runs, baseline_runs, OUTCOMES
+            )
+        except ValueError:
+            pass
+
+    parameter_importance_conclusion = classify_parameter_importance(
+        parameter_importance
+    )
+    interaction_conclusion = classify_interactions(interactions)
+    rank_stable = (
+        not rank_stability.empty
+        and rank_stability.groupby("outcome")["first_place_frequency"]
+        .max()
+        .ge(0.8)
+        .all()
     )
 
     conclusions = {
@@ -448,29 +651,51 @@ def build_robustness_report(
             else None
         ),
         "scenario_rank_stability": _conclusion(
-            not rank_stability.empty,
-            not rank_stability.empty and float(rank_stability["first_place_frequency"].max()) >= 0.8,
+            complete_rank_evidence and not rank_stability.empty,
+            bool(rank_stable),
         ),
-        "parameter_importance": _conclusion(
-            not parameter_importance.empty,
-            not parameter_importance.empty and parameter_importance["outcome"].nunique() >= 2,
-        ),
-        "interactions": _conclusion(
-            not interactions.empty,
-            not interactions.empty and float(interactions["max_abs_interaction_residual"].max()) <= 0.01,
-        ),
+        "parameter_importance": parameter_importance_conclusion,
+        "interactions": interaction_conclusion,
         "spatial_robustness": _conclusion(
-            not spatial.empty,
-            not spatial.empty and float(spatial["action_agreement"].median()) >= 0.8,
+            not spatial.empty and excluded_groups.empty,
+            not spatial.empty
+            and excluded_groups.empty
+            and float(spatial["action_agreement"].median()) >= 0.8,
         ),
         "missing_experiments": completeness.loc[
             completeness["availability"].ne("complete"), "experiment"
         ].tolist(),
         "excluded_incomplete_artifacts": int(len(inventory.incomplete)),
+        "excluded_manifest_artifacts": int(len(manifest_exclusions)),
+        "rank_evidence_qualification": (
+            "complete"
+            if complete_rank_evidence
+            else "withheld: required comparison groups are incomplete or fewer than two scenarios"
+        ),
+        "spatial_evidence_qualification": (
+            "complete"
+            if excluded_groups.empty and not comparison_groups.empty
+            else "qualified: one or more required comparison groups are incomplete"
+        ),
+        "expected_comparison_group_count": int(len(comparison_groups)),
+        "complete_comparison_group_count": int(comparison_groups["status"].eq("complete").sum()),
+        "excluded_comparison_group_count": int(len(excluded_groups)),
+        "excluded_comparison_group_keys": excluded_groups["comparison_key"].tolist(),
+        "parameter_importance_criteria": {
+            "minimum_held_out_r2": MIN_HELD_OUT_R2,
+            "top_rank_must_match_absolute_spearman": True,
+            "top_permutation_mean_minus_z_sd_must_exceed_zero": PERMUTATION_UNCERTAINTY_Z,
+        },
+        "interaction_criterion": {
+            "maximum_interaction_to_baseline_noise": MAX_INTERACTION_TO_BASELINE_NOISE
+        },
     }
 
     paths = {
         "completeness": _write_frame(completeness, destination / "run_completeness.csv"),
+        "comparison_groups": _write_frame(
+            comparison_groups, destination / "comparison_groups.csv"
+        ),
         "rank_stability": _write_frame(rank_stability, destination / "scenario_rank_stability.csv"),
         "parameter_importance": _write_frame(parameter_importance, destination / "parameter_importance.csv"),
         "interactions": _write_frame(interactions, destination / "interactions.csv"),
