@@ -20,7 +20,6 @@ MODERNIZED_NOTEBOOKS = [
     "05_compare_carbon_models.ipynb",
     "06_download_forest_registry.ipynb",
     "07_fetch_forest_details.ipynb",
-    "10.1_fast_scenario_reproduction.ipynb",
 ]
 
 
@@ -307,6 +306,8 @@ def test_fast_scenario_reproduction_notebook_contract() -> None:
     assert "manifest.head(6)" in source
     assert "progress=" in source
     assert "data/processed/legacy_sensitivity" in source
+    assert "benchmark_work_root" in source
+    assert "work_root=benchmark_work_root" in source
     assert "FULL REPRODUCTION GATE: PENDING" in source
     assert "10_scenario_comparison.ipynb" not in source
     assert "nbconvert" not in source

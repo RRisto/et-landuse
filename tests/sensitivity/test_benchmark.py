@@ -29,10 +29,11 @@ def _row(**changes: object) -> dict[str, object]:
 
 
 def test_benchmark_reports_wall_cpu_and_relative_speedup(
+    tmp_path: Path,
     minimal_context: pd.DataFrame,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Catch timing labels, worker counts, or speedup arithmetic drifting."""
+    """Catch benchmark runs escaping their caller-owned artifact root."""
     benchmark = importlib.import_module("estonia_landuse.sensitivity.benchmark")
     calls: list[tuple[Path, int, pd.DataFrame]] = []
     clock = iter([10.0, 14.0, 20.0, 22.0])
@@ -70,6 +71,7 @@ def test_benchmark_reports_wall_cpu_and_relative_speedup(
         ["wetland_suitability"],
         manifest,
         TINY_PROFILE,
+        work_root=tmp_path / "benchmark-work",
     )
 
     assert list(report["execution_mode"]) == ["sequential", "parallel"]
@@ -79,7 +81,9 @@ def test_benchmark_reports_wall_cpu_and_relative_speedup(
     assert list(report["speedup"]) == [1.0, 2.0]
     assert list(report["run_count"]) == [2, 2]
     assert len(calls) == 2
-    assert calls[0][0] != calls[1][0]
+    assert calls[0][0] == tmp_path / "benchmark-work" / "sequential"
+    assert calls[1][0] == tmp_path / "benchmark-work" / "parallel"
+    assert all(path.is_relative_to(tmp_path / "benchmark-work") for path, _, _ in calls)
     pd.testing.assert_frame_equal(calls[0][2], manifest)
     pd.testing.assert_frame_equal(calls[1][2], manifest)
 
