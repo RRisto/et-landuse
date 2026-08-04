@@ -7,7 +7,12 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class ExperimentProfile:
-    """Optimizer budget for one explicitly labelled experiment stage."""
+    """Optimizer budget for one explicitly labelled experiment stage.
+
+    ``use_seeds`` enables baseline-imitating seed prescriptors in the historical
+    trainer. It does not remove the integer random seed from a manifest row:
+    every profile may still request distinct stochastic repetitions.
+    """
 
     pop_size: int
     n_generations: int
@@ -34,7 +39,9 @@ PROFILES: dict[str, ExperimentProfile] = {
     "full": FULL_PROFILE,
 }
 
-# Each seed-capable profile includes the published reproduction seed, 42.
+# Integer random seeds identify stochastic repetitions for every profile.  The
+# ``use_seeds`` flag above independently controls historical seed prescriptors.
+# Seed-capable defaults include the published reproduction seed, 42.
 DEFAULT_SEEDS: dict[str, tuple[int, ...]] = {
     "test": (0,),
     "screen": (42, 73, 101),

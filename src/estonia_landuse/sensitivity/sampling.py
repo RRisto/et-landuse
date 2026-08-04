@@ -69,6 +69,7 @@ def _replace_biodiversity_component(config: dict, component: str, value: object)
 def _profile_inputs(
     profile: str, scenarios: Sequence[str] | None, seeds: Sequence[int] | None
 ) -> tuple[tuple[str, ...], tuple[int, ...]]:
+    """Resolve inputs while retaining random-seed repetitions for every profile."""
     resolve_profile(profile)
     resolved_scenarios = tuple(DEFAULT_SCENARIOS if scenarios is None else scenarios)
     unknown_scenarios = set(resolved_scenarios).difference(SCENARIO_LABELS)

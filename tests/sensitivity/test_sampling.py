@@ -44,6 +44,17 @@ def test_baseline_manifest_has_unique_execution_keys() -> None:
     assert set(manifest["profile"]) == {"screen"}
 
 
+def test_test_profile_keeps_distinct_random_seed_repetitions() -> None:
+    """Catch unseeded prescriptors being mistaken for a single random run."""
+    manifest = build_baseline_manifest(
+        profile="test", scenarios=("balanced",), seeds=(11, 29)
+    )
+
+    assert manifest_run_count(manifest) == 2
+    assert set(manifest["seed"]) == {11, 29}
+    _assert_unique_execution_keys(manifest)
+
+
 def test_oat_rows_change_exactly_one_historical_dotted_path() -> None:
     """Catch an OAT design that changes a confounding second parameter."""
     manifest = build_oat_manifest(
