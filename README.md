@@ -56,7 +56,13 @@ uv run jupyter lab
 # 07    — Fetch detailed forest attributes (parallel)
 # 08    — Train GBR carbon predictor from real data
 # 09    — Predict compartment carbon, then aggregate predictions to the 500m grid
-# 10    — Compare 5 constrained policy scenarios and save representative maps
+# 10    — Compare 6 constrained policy scenarios and save representative maps
+# 10.1  — Reproduce the 6 historical seed-42 scenario results
+# 11.1  — Measure stochastic optimizer-seed variation
+# 11.2  — Screen one parameter at a time (OAT)
+# 11.3  — Rank simultaneous global parameter sensitivity
+# 11.4  — Measure selected two-parameter interactions
+# 11.5  — Test biodiversity-assumption robustness
 ```
 
 Remote-data notebooks set `ALLOW_DOWNLOADS = False` by default. Existing local
@@ -154,7 +160,13 @@ for the upload structure and interpretation notes.
 │   ├── 07_fetch_forest_details.ipynb    # Fetch detailed attributes (parallel)
 │   ├── 08_train_carbon_predictor.ipynb  # Train GBR from real forest data
 │   ├── 09_spatial_join_and_model.ipynb  # Full pipeline: join + evolve + compare
-│   └── 10_scenario_comparison.ipynb     # 5 policy scenarios side-by-side
+│   ├── 10_scenario_comparison.ipynb     # 6 policy scenarios side-by-side
+│   ├── 10.1_fast_scenario_reproduction.ipynb # Historical seed-42 reproduction gate
+│   ├── 11.1_stochastic_baseline.ipynb   # Optimizer-seed noise baseline
+│   ├── 11.2_one_at_a_time.ipynb         # One-at-a-time parameter screening
+│   ├── 11.3_global_sensitivity.ipynb    # Simultaneous global sensitivity
+│   ├── 11.4_parameter_interactions.ipynb # Selected two-parameter interactions
+│   └── 11.5_biodiversity_robustness.ipynb # Biodiversity-assumption robustness
 ├── src/
 │   ├── estonia_landuse/                 # Main package
 │   │   ├── data/                        # Loading, constants
@@ -349,6 +361,53 @@ policy in the summary, plots, and saved GeoPackages. A dedicated wetland-gain
 figure shows rewetting that the dominant-action map can hide. See
 [docs/scenario-comparison.md](docs/scenario-comparison.md) for prerequisites,
 outputs, and interpretation guidance.
+
+## Historical-model sensitivity analysis (Notebooks 10.1–11.5)
+
+The sensitivity workflow tests whether Notebook 10's selected policies and
+reported outcomes remain stable when optimizer randomness or declared model
+assumptions change. It uses the same historical trainer and scenario rules as
+Notebook 10, wrapped in a resumable manifest runner. Run the notebooks in this
+order:
+
+| Notebook | Question answered |
+|----------|-------------------|
+| **10.1 Fast scenario reproduction** | Can the preserved runner reproduce all six historical Notebook 10 results with the published seed, 42? |
+| **11.1 Stochastic baseline** | How much variation is caused by optimizer seeds while scenario defaults stay fixed? |
+| **11.2 One-at-a-time (OAT)** | Which individual parameters have effects larger than baseline seed noise, and are their responses nonlinear? |
+| **11.3 Global sensitivity** | Which parameters matter when all sampled parameters vary simultaneously? |
+| **11.4 Parameter interactions** | Do selected parameter pairs have non-additive effects? |
+| **11.5 Biodiversity robustness** | Do alternative dimensionless biodiversity-value assumptions change outcomes, rankings, or spatial recommendations? |
+
+Notebook 10.1 is the scientific gate: only a `full` seed-42 run is compared
+with the saved Notebook 10 summary and allowed to pass reproduction. Run
+Notebook 11.1 next because its seed-to-seed variation is the noise reference
+used when interpreting OAT, global, interaction, and biodiversity effects.
+
+Choose the compute profile and worker count before starting Jupyter:
+
+```powershell
+$env:SENSITIVITY_PROFILE = "screen"
+$env:SENSITIVITY_N_WORKERS = "2"
+uv run jupyter lab
+```
+
+- `test` uses a tiny deterministic context as an executable smoke test.
+- `screen` uses real inputs with a reduced optimizer budget for exploratory runs.
+- `full` uses the historical scientific budget; use it for reproduction and final conclusions.
+
+Outputs default to `data/processed/legacy_sensitivity/`. Valid completed
+artifact pairs are reused when a notebook is rerun; set
+`SENSITIVITY_OVERWRITE=true` only when intentional recomputation is required.
+Increase `SENSITIVITY_N_WORKERS` gradually because each process holds its own
+data and optimizer state.
+
+These experiments measure sensitivity of the historical model and optimizer
+within the tested parameter ranges. They do **not** estimate empirical
+ecological uncertainty or prove that a recommendation is ecologically
+correct. See the
+[legacy optimizer sensitivity design](docs/superpowers/specs/2026-08-04-legacy-optimizer-sensitivity-design.md)
+for the detailed experiment and artifact contract.
 
 ## Grid Resolution
 
