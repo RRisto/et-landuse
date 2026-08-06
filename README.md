@@ -73,6 +73,8 @@ Notebook 09.
 
 A standalone HTML/JS viewer for saved Notebook 10 scenario results.
 
+Open the published visualisation: [ristohinno.com/landuse](https://ristohinno.com/landuse/).
+
 See [docs/scenario-comparison.md](docs/scenario-comparison.md) before running
 Notebook 10 or interpreting its outputs.
 
@@ -90,10 +92,11 @@ uv sync --extra dev        # tests and linting
 ```
 
 Features:
-- **Scenario map:** cells coloured by the largest modelled land-use increase in each cell
-- **Biodiversity map:** Rohemeeter scores (RdYlGn colormap)
-- **Metric cards:** CO₂ sequestration, cost, biodiversity, area, cost efficiency — all with confidence intervals
+- **Scenario selection:** switching a scenario loads its saved model result and highlights it in the comparison table
+- **Current land-use map:** the dominant present land-use type in each cell
+- **Scenario map:** cells coloured by the largest modelled increase: forest, wetland, grassland, or agricultural land
 - **Scenario comparison:** saved representative-policy results for every scenario
+- **Cell pop-ups:** the cell identifier and dominant current land use or modelled increase
 - **Important:** map colours are not probabilities and do not show the full source-to-destination transition
 
 Run the offline quality checks with:
