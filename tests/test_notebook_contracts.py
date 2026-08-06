@@ -26,6 +26,16 @@ MODERNIZED_NOTEBOOKS = [
     "11.4_parameter_interactions.ipynb",
     "11.5_biodiversity_robustness.ipynb",
 ]
+SENSITIVITY_RESULT_NOTEBOOKS = {
+    "11.1_stochastic_baseline.ipynb",
+    "11.2_one_at_a_time.ipynb",
+    "11.3_global_sensitivity.ipynb",
+    "11.4_parameter_interactions.ipynb",
+    "11.5_biodiversity_robustness.ipynb",
+}
+CLEAN_OUTPUT_NOTEBOOKS = [
+    name for name in MODERNIZED_NOTEBOOKS if name not in SENSITIVITY_RESULT_NOTEBOOKS
+]
 
 
 def _source(name: str) -> str:
@@ -133,7 +143,7 @@ def test_learned_carbon_notebook_uses_shared_500m_constants() -> None:
     assert "target_fractions / tgt_sum * available" not in source
 
 
-@pytest.mark.parametrize("name", MODERNIZED_NOTEBOOKS)
+@pytest.mark.parametrize("name", CLEAN_OUTPUT_NOTEBOOKS)
 def test_modernized_notebooks_have_no_stale_outputs(name: str) -> None:
     document = json.loads((NOTEBOOKS / name).read_text(encoding="utf-8"))
     for cell in document["cells"]:

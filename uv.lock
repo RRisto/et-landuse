@@ -977,6 +977,8 @@ all = [
 dev = [
     { name = "aiohttp" },
     { name = "geopandas" },
+    { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "matplotlib", version = "3.11.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "nest-asyncio" },
     { name = "owslib", version = "0.35.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "owslib", version = "0.36.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -1043,6 +1045,7 @@ requires-dist = [
     { name = "mapclassify", marker = "extra == 'all'", specifier = ">=2.6.0" },
     { name = "mapclassify", marker = "extra == 'notebook'", specifier = ">=2.6.0" },
     { name = "matplotlib", marker = "extra == 'all'", specifier = ">=3.8.0" },
+    { name = "matplotlib", marker = "extra == 'dev'", specifier = ">=3.8.0" },
     { name = "matplotlib", marker = "extra == 'notebook'", specifier = ">=3.8.0" },
     { name = "nest-asyncio", marker = "extra == 'all'", specifier = ">=1.6.0" },
     { name = "nest-asyncio", marker = "extra == 'dev'", specifier = ">=1.6.0" },
