@@ -21,9 +21,6 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import rasterio
-from rasterio.mask import mask as rio_mask
-from shapely.geometry import mapping
-
 from config import (
     AGB_TO_CARBON_FACTOR,
     BIOMASS_DIR,
@@ -32,6 +29,8 @@ from config import (
     NORM_LOWER_PERCENTILE,
     NORM_UPPER_PERCENTILE,
 )
+from rasterio.mask import mask as rio_mask
+from shapely.geometry import mapping
 
 
 def find_biomass_raster(biomass_dir: Path) -> Path | None:

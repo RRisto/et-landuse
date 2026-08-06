@@ -1,7 +1,7 @@
 """Tests for saved-scenario visualizer exports."""
 
-import json
 import importlib.util
+import json
 from pathlib import Path
 
 import geopandas as gpd

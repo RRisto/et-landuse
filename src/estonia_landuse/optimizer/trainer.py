@@ -3,9 +3,65 @@
 import numpy as np
 import pandas as pd
 
-from .prescriptor import Prescriptor
-from .nsga2 import fast_non_dominated_sort, crowding_distance
 from ..simulator.simulator import summarize_policy
+from ..validation import resolve_rng, validate_context_columns
+from .nsga2 import crowding_distance, fast_non_dominated_sort
+from .prescriptor import Prescriptor
+
+FOURTH_OBJECTIVES = {
+    "agriculture_gain_pct",
+    "changed_pct",
+    "wetland_gain_pct",
+}
+MAXIMIZED_FOURTH_OBJECTIVES = {
+    "agriculture_gain_pct",
+    "wetland_gain_pct",
+}
+
+
+def _fourth_objective(config: dict | None) -> str:
+    config = {} if config is None else config
+    objective = config.get("optimization", {}).get(
+        "fourth_objective", "changed_pct"
+    )
+    if objective not in FOURTH_OBJECTIVES:
+        choices = ", ".join(sorted(FOURTH_OBJECTIVES))
+        raise ValueError(
+            f"unsupported fourth objective {objective!r}; choose from {choices}"
+        )
+    return objective
+
+
+def _objective_metrics(
+    summary: dict, config: dict | None
+) -> tuple[float, float, float, float]:
+    objective = _fourth_objective(config)
+    fourth = summary[objective]
+    if objective in MAXIMIZED_FOURTH_OBJECTIVES:
+        fourth = -fourth
+    return (
+        -summary["biodiversity_gain"],
+        -summary["carbon_gain"],
+        summary["cost"],
+        fourth,
+    )
+
+
+def _fourth_progress(
+    metrics: np.ndarray,
+    config: dict | None,
+) -> tuple[str, float]:
+    """Return the public label and value for the fourth objective."""
+    objective = _fourth_objective(config)
+    labels = {
+        "agriculture_gain_pct": "agriculture_gain",
+        "changed_pct": "change",
+        "wetland_gain_pct": "wetland_gain",
+    }
+    value = float(metrics[3])
+    if objective in MAXIMIZED_FOURTH_OBJECTIVES:
+        value = -value
+    return labels[objective], value
 
 
 def train(
@@ -19,6 +75,8 @@ def train(
     config: dict | None = None,
     use_seeds: bool = True,
     verbose: bool = True,
+    seed: int | None = None,
+    rng: np.random.Generator | None = None,
 ) -> list[Prescriptor]:
     """Run NSGA-II evolution. Returns the final population sorted by rank.
     
@@ -38,6 +96,16 @@ def train(
         List of Prescriptor objects (final population), sorted by Pareto rank.
     """
     from .seeds import create_seed_prescriptors
+
+    if pop_size < 2:
+        raise ValueError("pop_size must be at least 2")
+    if n_generations < 0:
+        raise ValueError("n_generations must be non-negative")
+    if hidden_size < 1:
+        raise ValueError("hidden_size must be positive")
+    validate_context_columns(context, feature_columns)
+    _fourth_objective(config)
+    rng = resolve_rng(seed=seed, rng=rng)
     
     in_size = len(feature_columns)
     features = context[feature_columns].values.astype(np.float32)
@@ -50,13 +118,20 @@ def train(
     
     # Initialize population
     if use_seeds:
-        seeds = create_seed_prescriptors(features_norm, context, hidden_size=hidden_size)
+        seeds = create_seed_prescriptors(
+            features_norm,
+            context,
+            hidden_size=hidden_size,
+            rng=rng,
+        )
         if verbose:
             print(f"Created {len(seeds)} seed prescriptors")
         n_random = max(0, pop_size - len(seeds))
-        population = seeds + [Prescriptor(in_size, hidden_size) for _ in range(n_random)]
+        population = seeds + [
+            Prescriptor(in_size, hidden_size, rng=rng) for _ in range(n_random)
+        ]
     else:
-        population = [Prescriptor(in_size, hidden_size) for _ in range(pop_size)]
+        population = [Prescriptor(in_size, hidden_size, rng=rng) for _ in range(pop_size)]
     
     # Evaluate initial population and assign ranks/crowding
     _evaluate_population(population, features_norm, context, config)
@@ -64,7 +139,13 @@ def train(
     
     for gen in range(n_generations):
         # Create offspring
-        offspring = _create_offspring(population, pop_size, p_mutation, mutation_factor)
+        offspring = _create_offspring(
+            population,
+            pop_size,
+            p_mutation,
+            mutation_factor,
+            rng,
+        )
         _evaluate_population(offspring, features_norm, context, config)
         
         # Combine and select
@@ -74,9 +155,14 @@ def train(
         if verbose and (gen + 1) % 10 == 0:
             front0 = [p for p in population if p.rank == 0]
             avg_metrics = np.mean([p.metrics for p in front0], axis=0)
+            fourth_label, fourth_value = _fourth_progress(
+                avg_metrics,
+                config,
+            )
             print(f"Gen {gen+1:>3d} | Front-0: {len(front0):>3d} | "
                   f"Avg: bio={-avg_metrics[0]:.4f} carbon={-avg_metrics[1]:.4f} "
-                  f"cost={avg_metrics[2]:.4f} change={avg_metrics[3]:.1%}")
+                  f"cost={avg_metrics[2]:.4f} "
+                  f"{fourth_label}={fourth_value:.1%}")
     
     population.sort(key=lambda p: (p.rank, -getattr(p, "crowding", 0)))
     return population
@@ -88,38 +174,35 @@ def _evaluate_population(population, features_norm, context, config):
         target_fractions = p.prescribe(features_norm)
         summary = summarize_policy(context, target_fractions, config)
         
-        # NSGA-II minimizes all objectives
-        p.metrics = (
-            -summary["biodiversity_gain"],
-            -summary["carbon_gain"],
-            summary["cost"],
-            summary["changed_pct"],
-        )
+        # NSGA-II minimizes all objectives.
+        p.metrics = _objective_metrics(summary, config)
+        p.constraint_violation = summary["constraint_penalty"]
 
 
-def _create_offspring(population, n_offspring, p_mutation, mutation_factor):
+def _create_offspring(population, n_offspring, p_mutation, mutation_factor, rng):
     """Create offspring via tournament selection + crossover + mutation."""
     offspring = []
     for _ in range(n_offspring):
-        p1 = _tournament_select(population)
-        p2 = _tournament_select(population)
+        p1 = _tournament_select(population, rng=rng)
+        p2 = _tournament_select(population, rng=rng)
         
         # Uniform crossover
         child = p1.copy()
-        mask = np.random.rand(child.n_params) < 0.5
+        mask = rng.random(child.n_params) < 0.5
         child.params[mask] = p2.params[mask]
         
         # Gaussian mutation
-        mut_mask = np.random.rand(child.n_params) < p_mutation
-        child.params[mut_mask] += np.random.randn(mut_mask.sum()) * mutation_factor
+        mut_mask = rng.random(child.n_params) < p_mutation
+        child.params[mut_mask] += rng.standard_normal(mut_mask.sum()) * mutation_factor
         
         offspring.append(child)
     return offspring
 
 
-def _tournament_select(population, k=3):
+def _tournament_select(population, k=3, rng=None):
     """Tournament selection: pick k random, prefer lower rank, then higher crowding."""
-    candidates = np.random.choice(len(population), size=min(k, len(population)), replace=False)
+    rng = np.random.default_rng() if rng is None else rng
+    candidates = rng.choice(len(population), size=min(k, len(population)), replace=False)
     best = min(candidates, key=lambda i: (
         population[i].rank if population[i].rank is not None else 999,
         -(getattr(population[i], "crowding", 0) or 0),
@@ -130,7 +213,11 @@ def _tournament_select(population, k=3):
 def _select(combined, pop_size):
     """NSGA-II selection: fill next generation by fronts + crowding distance."""
     metrics_list = [p.metrics for p in combined]
-    fronts = fast_non_dominated_sort(metrics_list)
+    constraint_violations = [
+        p.constraint_violation if p.constraint_violation is not None else float("inf")
+        for p in combined
+    ]
+    fronts = fast_non_dominated_sort(metrics_list, constraint_violations)
     
     next_gen = []
     for rank, front in enumerate(fronts):

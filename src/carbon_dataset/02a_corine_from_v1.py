@@ -7,9 +7,7 @@ V1 feature table which already has CORINE group proportions.
 Outputs: data/processed/carbon_v1_5/corine_features.parquet
 """
 
-import numpy as np
 import pandas as pd
-
 from config import (
     AFFORESTATION_BASE_SUITABILITY,
     ALL_GROUPS,
@@ -18,7 +16,6 @@ from config import (
     NATURALNESS_LOOKUP,
     WETLAND_BASE_SUITABILITY,
 )
-
 
 # Mapping from V1 column names to spec group names
 V1_TO_SPEC_GROUP = {
@@ -49,7 +46,6 @@ def corine_from_v1(v1_features_path: str) -> pd.DataFrame:
             df[f"{group}_share"] = 0.0
 
     # Dominant CLC group
-    share_cols = {g: f"{g}_share" for g in ALL_GROUPS}
     shares = df[[f"{g}_share" for g in ALL_GROUPS]]
     df["clc_group"] = shares.idxmax(axis=1).str.replace("_share", "")
 
@@ -113,8 +109,9 @@ def save_corine_features(df: pd.DataFrame):
 
 
 if __name__ == "__main__":
-    from config import DATA_PROCESSED_CARBON
     from pathlib import Path
+
+    from config import DATA_PROCESSED_CARBON
 
     v1_path = Path("data/processed/v1/features_v1.parquet")
     if not v1_path.exists():

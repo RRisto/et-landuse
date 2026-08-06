@@ -7,9 +7,22 @@ The simulator computes outcomes based on the transition from current to target.
 import numpy as np
 import pandas as pd
 
-from .actions import LAND_USE_GROUPS, CHANGEABLE_GROUPS, FIXED_GROUPS
+from ..validation import validate_context_columns, validate_target_fractions
 from .carbon_nir import score_carbon_nir
 from .config import default_config
+from .targets import GROUP_COLUMNS, realize_targets
+
+REQUIRED_CONTEXT_COLUMNS = [
+    "forest_pct",
+    "wetland_pct",
+    "agriculture_pct",
+    "grassland_pct",
+    "urban_pct",
+    "water_pct",
+    "wetland_suitability",
+    "protected_overlap_pct",
+    "opportunity_cost_proxy",
+]
 
 
 def score_policy(context: pd.DataFrame, target_fractions: np.ndarray,
@@ -29,27 +42,22 @@ def score_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     """
     if config is None:
         config = default_config()
-    
+
+    validate_context_columns(context, REQUIRED_CONTEXT_COLUMNS)
+    target_fractions = validate_target_fractions(context, target_fractions)
+
     n = len(context)
     sc = config.get("scoring", {})
     
     # Current fractions for changeable groups
-    current = np.column_stack([
-        context["forest_pct"].values,
-        context["wetland_pct"].values,
-        context["agriculture_pct"].values,
-        context["grassland_pct"].values,
-    ])
+    current = context[GROUP_COLUMNS].to_numpy(dtype=float)
     
     # Fixed fractions (urban + water = land the prescriptor can't touch)
     urban = context["urban_pct"].values
     water = context["water_pct"].values
     available_land = np.clip(1.0 - urban - water, 0, 1)
     
-    # Normalize target fractions to sum to available land per cell
-    target_sum = target_fractions.sum(axis=1, keepdims=True)
-    target_sum = np.where(target_sum > 0, target_sum, 1.0)
-    targets = target_fractions / target_sum * available_land[:, None]
+    targets = realize_targets(context, target_fractions, config)
     
     # Compute transitions (delta per group)
     delta = targets - current  # positive = increase, negative = decrease
@@ -68,11 +76,11 @@ def score_policy(context: pd.DataFrame, target_fractions: np.ndarray,
 
     if carbon_model == "nir":
         # NIR-calibrated: uses Estonian NIR emission factors by transition type
-        carbon_gain = score_carbon_nir(context, target_fractions)
+        carbon_gain = score_carbon_nir(context, targets)
     elif carbon_model == "learned":
         # Learned model: GBR for forest sequestration + NIR for other transitions
         from .carbon_learned import score_carbon_learned
-        carbon_gain = score_carbon_learned(context, target_fractions, config)
+        carbon_gain = score_carbon_learned(context, targets, config)
     else:
         # V1.5 or flat model (existing logic)
         carbon_v15 = config.get("carbon_v1_5", {})
@@ -130,9 +138,15 @@ def score_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     biodiversity_gain -= wetland_gain_raw * biodiversity_value[1]
     biodiversity_gain += wetland_gain_raw * biodiversity_value[1] * wetland_suit
 
-    # Bonus for increasing land near protected areas
+    # Reward natural and semi-natural land gains in cells partly overlapping
+    # protected areas. Agriculture expansion is deliberately excluded: it does
+    # not improve ecological connectivity.
     protected = context["protected_overlap_pct"].values
-    biodiversity_gain += sc.get("connectivity_bonus", 0.2) * change_pct * protected
+    natural_gain_pct = np.clip(delta[:, [0, 1, 3]], 0, None).sum(axis=1)
+    natural_gain_pct /= np.where(available_land > 0, available_land, 1.0)
+    biodiversity_gain += (
+        sc.get("connectivity_bonus", 0.2) * natural_gain_pct * protected
+    )
     
     # --- Cost ---
     # Cost of change depends on: amount changed, opportunity cost, and what you're converting
@@ -142,6 +156,10 @@ def score_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     # Converting agriculture is expensive (food production loss)
     agriculture_loss = np.clip(-delta[:, 2], 0, None)  # agriculture decrease
     agriculture_penalty = sc.get("agriculture_loss_cost", 2.0) * agriculture_loss
+    agriculture_gain = np.clip(delta[:, 2], 0, None)
+    agriculture_penalty += (
+        sc.get("agriculture_gain_cost", 0.0) * agriculture_gain
+    )
     
     # Hard cap: can't lose more than X% of cell's original agriculture
     max_agri_loss = sc.get("max_agriculture_loss_pct", 0.3)
@@ -163,8 +181,6 @@ def score_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     biodiversity_gain[is_protected] = 0.0
     carbon_gain[is_protected] = 0.0
     change_pct[is_protected] = 0.0  # don't count toward budget
-    # Massive penalty proportional to how much change is attempted
-    penalty[is_protected] += np.abs(delta[is_protected]).sum(axis=1) * 100.0
     
     # Penalize converting wetland to forest (ecologically wrong)
     # Hard constraint: NEVER reduce existing wetland (wetland loss = 0)
@@ -178,13 +194,6 @@ def score_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     # Penalize converting wetland to forest (ecologically wrong)
     forest_gain_where_wetland_lost = np.clip(delta[:, 0], 0, None) * has_wetland_loss.astype(float)
     penalty += forest_gain_where_wetland_lost * 50.0
-    
-    # Penalize cells that increase BOTH forest and wetland simultaneously
-    # (physically contradictory — same land can't become both)
-    forest_gain = np.clip(delta[:, 0], 0, None)
-    wetland_gain = np.clip(delta[:, 1], 0, None)
-    dual_increase = np.minimum(forest_gain, wetland_gain)  # the overlapping part
-    penalty += dual_increase * 15.0
     
     # Penalize wetland increase where suitability is low
     wetland_suit = context["wetland_suitability"].values
@@ -216,7 +225,43 @@ def summarize_policy(context: pd.DataFrame, target_fractions: np.ndarray,
         config = default_config()
     
     outcomes = score_policy(context, target_fractions, config)
+    biodiversity_gain = outcomes["biodiversity_gain"].mean()
+    carbon_gain = outcomes["carbon_gain"].mean()
     changed_pct = outcomes["change_pct"].mean()
+    targets = realize_targets(context, target_fractions, config)
+
+    current_agriculture = context["agriculture_pct"].to_numpy(float)
+    current_agri_total = current_agriculture.sum()
+    agriculture_delta = targets[:, 2] - current_agriculture
+    if current_agri_total > 0:
+        agriculture_loss_pct = (
+            max(0.0, -agriculture_delta.sum()) / current_agri_total
+        )
+        agriculture_gain_pct = (
+            max(0.0, agriculture_delta.sum()) / current_agri_total
+        )
+        gross_agriculture_loss_pct = (
+            np.clip(-agriculture_delta, 0.0, None).sum()
+            / current_agri_total
+        )
+        gross_agriculture_gain_pct = (
+            np.clip(agriculture_delta, 0.0, None).sum()
+            / current_agri_total
+        )
+    else:
+        agriculture_loss_pct = 0.0
+        agriculture_gain_pct = 0.0
+        gross_agriculture_loss_pct = 0.0
+        gross_agriculture_gain_pct = 0.0
+
+    current_wetland_total = context["wetland_pct"].to_numpy(float).sum()
+    target_wetland_total = targets[:, 1].sum()
+    wetland_gain_pct = (
+        max(0.0, target_wetland_total - current_wetland_total)
+        / current_wetland_total
+        if current_wetland_total > 0
+        else 0.0
+    )
     
     # Budget penalty
     max_changed = config.get("max_changed_pct", 0.20)
@@ -226,25 +271,57 @@ def summarize_policy(context: pd.DataFrame, target_fractions: np.ndarray,
     # Food security: penalize total agriculture loss across the county
     # Can't reduce total agriculture area by more than max_total_agri_loss_pct
     max_total_agri_loss = config.get("max_total_agri_loss_pct", 0.20)
-    current_agri_total = context["agriculture_pct"].values.sum()
-    if current_agri_total > 0:
-        # Compute target agriculture fractions
-        urban = context["urban_pct"].values
-        water = context["water_pct"].values
-        available_land = np.clip(1.0 - urban - water, 0, 1)
-        target_sum = target_fractions.sum(axis=1, keepdims=True)
-        target_sum = np.where(target_sum > 0, target_sum, 1.0)
-        targets = target_fractions / target_sum * available_land[:, None]
-        target_agri_total = targets[:, 2].sum()  # agriculture is index 2
-        agri_loss_frac = (current_agri_total - target_agri_total) / current_agri_total
-        excess_agri_loss = max(0.0, agri_loss_frac - max_total_agri_loss)
-        agri_penalty_weight = config.get("total_agri_loss_penalty_weight", 20.0)
-        budget_penalty += excess_agri_loss * agri_penalty_weight
+    excess_agri_loss = max(
+        0.0, agriculture_loss_pct - max_total_agri_loss
+    )
+    agri_penalty_weight = config.get("total_agri_loss_penalty_weight", 20.0)
+    budget_penalty += excess_agri_loss * agri_penalty_weight
+    changed_excess = max(0.0, changed_pct - max_changed)
+    max_total_agri_gain = config.get("max_total_agri_gain_pct", 1.0)
+    agriculture_gain_excess = max(
+        0.0, agriculture_gain_pct - max_total_agri_gain
+    )
+    min_total_agri_gain = config.get("min_total_agri_gain_pct", 0.0)
+    agriculture_gain_shortfall = max(
+        0.0, min_total_agri_gain - agriculture_gain_pct
+    )
+    max_gross_agri_loss = config.get("max_gross_agri_loss_pct", 1.0)
+    gross_agriculture_loss_excess = max(
+        0.0, gross_agriculture_loss_pct - max_gross_agri_loss
+    )
+    max_gross_agri_gain = config.get("max_gross_agri_gain_pct", 1.0)
+    gross_agriculture_gain_excess = max(
+        0.0, gross_agriculture_gain_pct - max_gross_agri_gain
+    )
+    biodiversity_shortfall = max(
+        0.0,
+        config.get("min_biodiversity_gain", -1.0) - biodiversity_gain,
+    )
+    carbon_shortfall = max(
+        0.0,
+        config.get("min_carbon_gain", -1.0) - carbon_gain,
+    )
+    constraint_penalty = (
+        outcomes["constraint_penalty"].mean()
+        + changed_excess
+        + excess_agri_loss
+        + agriculture_gain_excess
+        + agriculture_gain_shortfall
+        + gross_agriculture_loss_excess
+        + gross_agriculture_gain_excess
+        + biodiversity_shortfall
+        + carbon_shortfall
+    )
     
     return {
-        "biodiversity_gain": outcomes["biodiversity_gain"].mean(),
-        "carbon_gain": outcomes["carbon_gain"].mean(),
+        "biodiversity_gain": biodiversity_gain,
+        "carbon_gain": carbon_gain,
         "cost": outcomes["cost"].mean() + budget_penalty,
-        "constraint_penalty": outcomes["constraint_penalty"].mean(),
+        "constraint_penalty": constraint_penalty,
         "changed_pct": changed_pct,
+        "agriculture_loss_pct": agriculture_loss_pct,
+        "agriculture_gain_pct": agriculture_gain_pct,
+        "gross_agriculture_loss_pct": gross_agriculture_loss_pct,
+        "gross_agriculture_gain_pct": gross_agriculture_gain_pct,
+        "wetland_gain_pct": wetland_gain_pct,
     }

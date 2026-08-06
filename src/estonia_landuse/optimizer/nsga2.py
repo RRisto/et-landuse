@@ -2,8 +2,13 @@
 
 import numpy as np
 
+CONSTRAINT_TOLERANCE = 1e-12
 
-def fast_non_dominated_sort(metrics_list: list[tuple]) -> list[list[int]]:
+
+def fast_non_dominated_sort(
+    metrics_list: list[tuple],
+    constraint_violations: list[float] | None = None,
+) -> list[list[int]]:
     """Sort population into Pareto fronts.
     
     Args:
@@ -14,16 +19,31 @@ def fast_non_dominated_sort(metrics_list: list[tuple]) -> list[list[int]]:
         fronts[0] = rank-0 (Pareto-optimal), fronts[1] = rank-1, etc.
     """
     n = len(metrics_list)
+    if constraint_violations is None:
+        constraint_violations = [0.0] * n
+    elif len(constraint_violations) != n:
+        raise ValueError("constraint_violations must match metrics_list length")
+
     domination_count = [0] * n  # how many dominate me
     dominated_set = [[] for _ in range(n)]  # who I dominate
     fronts = [[]]
     
     for i in range(n):
         for j in range(i + 1, n):
-            if _dominates(metrics_list[i], metrics_list[j]):
+            if constraint_dominates(
+                metrics_list[i],
+                metrics_list[j],
+                constraint_violations[i],
+                constraint_violations[j],
+            ):
                 dominated_set[i].append(j)
                 domination_count[j] += 1
-            elif _dominates(metrics_list[j], metrics_list[i]):
+            elif constraint_dominates(
+                metrics_list[j],
+                metrics_list[i],
+                constraint_violations[j],
+                constraint_violations[i],
+            ):
                 dominated_set[j].append(i)
                 domination_count[i] += 1
     
@@ -46,6 +66,33 @@ def fast_non_dominated_sort(metrics_list: list[tuple]) -> list[list[int]]:
     
     # Remove last empty front
     return fronts[:-1]
+
+
+def constraint_dominates(
+    a: tuple,
+    b: tuple,
+    violation_a: float,
+    violation_b: float,
+    tolerance: float = CONSTRAINT_TOLERANCE,
+) -> bool:
+    """Compare solutions using feasible-first constraint dominance."""
+    normalized_a = _normalized_violation(violation_a)
+    normalized_b = _normalized_violation(violation_b)
+    feasible_a = normalized_a <= tolerance
+    feasible_b = normalized_b <= tolerance
+
+    if feasible_a != feasible_b:
+        return feasible_a
+    if not feasible_a and normalized_a != normalized_b:
+        return normalized_a < normalized_b
+    return _dominates(a, b)
+
+
+def _normalized_violation(value: float) -> float:
+    value = float(value)
+    if not np.isfinite(value):
+        return float("inf")
+    return max(0.0, value)
 
 
 def crowding_distance(metrics_list: list[tuple], front: list[int]) -> dict[int, float]:
@@ -86,7 +133,7 @@ def crowding_distance(metrics_list: list[tuple], front: list[int]) -> dict[int, 
 def _dominates(a: tuple, b: tuple) -> bool:
     """Does solution a dominate b? (all objectives minimized)"""
     better_in_any = False
-    for ai, bi in zip(a, b):
+    for ai, bi in zip(a, b, strict=True):
         if ai > bi:
             return False
         if ai < bi:

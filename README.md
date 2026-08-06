@@ -8,10 +8,10 @@ Explores spatial policy trade-offs between biodiversity, carbon sequestration, h
 
 ## How it works
 
-1. A **prescriptor** neural network recommends target land-use fractions per 1 km grid cell
+1. A **prescriptor** neural network recommends target land-use fractions per 500 m grid cell
 2. A **simulator** scores the transition from current to target land use on multiple objectives
-3. **NSGA-II** evolves a population of prescriptors to find Pareto-optimal trade-off policies
-4. A notebook visualizes results on interactive maps
+3. Feasible-first **NSGA-II** evolves a population of prescriptors to find Pareto-optimal trade-off policies
+4. Notebooks compare objectives, select scenario representatives, and save spatial policy maps
 
 ## Actions
 
@@ -24,10 +24,14 @@ Explores spatial policy trade-offs between biodiversity, carbon sequestration, h
 
 ## Objectives
 
-- Maximize biodiversity proxy
-- Maximize carbon proxy (V1.5: spatially-informed)
-- Maximize habitat connectivity
-- Minimize intervention cost and constraint violations
+- Maximize biodiversity gain, including a protected-area connectivity bonus for
+  forest, wetland, and grassland gains (not agricultural expansion)
+- Maximize carbon gain using the selected flat, NIR, or learned model
+- Minimize intervention cost
+- Minimize changed land; Wetland Priority instead maximizes wetland gain
+
+Physical and scenario-specific policy limits are handled as feasibility
+constraints, not as objectives that can be traded away.
 
 ## Quick start
 
@@ -51,22 +55,38 @@ uv run jupyter lab
 # 06    — Download forest registry compartment geometries
 # 07    — Fetch detailed forest attributes (parallel)
 # 08    — Train GBR carbon predictor from real data
-# 09    — Spatial join + full model comparison + maps
-# 10    — Policy scenario comparison (5 scenarios, full Pareto analysis)
+# 09    — Predict compartment carbon, then aggregate predictions to the 500m grid
+# 10    — Compare 6 constrained policy scenarios and save representative maps
+# 10.1  — Reproduce the 6 historical seed-42 scenario results
+# 11.1  — Measure stochastic optimizer-seed variation
+# 11.2  — Screen one parameter at a time (OAT)
+# 11.3  — Rank simultaneous global parameter sensitivity
+# 11.4  — Measure selected two-parameter interactions
+# 11.5  — Test biodiversity-assumption robustness
 ```
 
-## Interactive visualizer
+Remote-data notebooks set `ALLOW_DOWNLOADS = False` by default. Existing local
+files are reused unless you explicitly enable a refresh. Notebook 10 performs
+no downloads and requires the prepared
+`data/processed/learned_carbon/features_with_forest.parquet` produced by
+Notebook 09.
 
 A standalone HTML/JS viewer for saved Notebook 10 scenario results.
 
+See [docs/scenario-comparison.md](docs/scenario-comparison.md) before running
+Notebook 10 or interpreting its outputs.
+
+### Installation profiles
+
+The default install contains the numerical core. Add only the tools needed for
+your workflow:
+
 ```bash
-# Generate the grid GeoJSON (one-time, after processing data)
-uv run python visualizer/export_geojson.py
-
-# Serve locally (browsers block fetch on file://)
-python -m http.server 8000 -d visualizer
-
-# Open http://localhost:8000
+uv sync --extra pipeline   # geospatial processing and external data sources
+uv sync --extra notebook   # Jupyter and visualization
+uv sync --extra ml         # PyTorch, Streamlit, and Plotly
+uv sync --extra all        # complete research environment
+uv sync --extra dev        # tests and linting
 ```
 
 Features:
@@ -75,6 +95,78 @@ Features:
 - **Metric cards:** CO₂ sequestration, cost, biodiversity, area, cost efficiency — all with confidence intervals
 - **Scenario comparison:** saved representative-policy results for every scenario
 - **Important:** map colours are not probabilities and do not show the full source-to-destination transition
+
+Run the offline quality checks with:
+
+```bash
+uv run --extra dev pytest -q
+uv run --extra dev ruff check src tests
+```
+
+The automated tests use synthetic fixtures and do not download production
+datasets.
+
+### Reproducible and feasible evolution
+
+Pass an explicit seed when comparing experiments:
+
+```python
+population = train(
+    context,
+    feature_columns,
+    seed=42,
+)
+```
+
+Each prescriptor exposes `constraint_violation`. NSGA-II uses feasible-first
+selection: every policy with zero constraint violation outranks every
+infeasible policy. Feasible policies are then compared using biodiversity,
+carbon, cost, and the configured fourth objective. The default fourth objective
+minimizes changed area; Wetland Priority maximizes wetland gain. Among
+infeasible policies, lower total violation ranks first.
+
+Use `estonia_landuse.scenarios.annotate_feasibility` and
+`select_scenario_representatives` before `build_scenario_summary` when
+preparing scenario reports. The same selected policy must be reused for the
+summary and all maps so they describe one consistent representative.
+
+## NSGA-II exploration notebook
+
+[`notebooks/nsga2.ipynb`](notebooks/nsga2.ipynb) is an optional learning
+notebook for understanding NSGA-II from first principles. Based on Deb et
+al.'s NSGA-II paper, it works through Pareto dominance, nondominated fronts,
+fast nondominated sorting, normalized crowding distance, crowded comparison,
+tournament selection, crossover, mutation, elitist parent-offspring
+replacement, and constrained dominance.
+
+The notebook is exploratory and is not a required step in the numbered
+land-use pipeline. Its from-scratch examples are intended to explain the
+algorithm; the project implementation used by the land-use experiments lives
+under [`src/estonia_landuse/optimizer/`](src/estonia_landuse/optimizer/).
+
+### Reusing local Rohemeeter data
+
+Rohemeeter collection is expensive and can take a long time. Notebook
+`01.2_fetch_rohemeeter.ipynb` reuses existing files under `data/processed/`
+and saved progress output by default. Set `ALLOW_DOWNLOADS = True` only when
+you intentionally want to refresh those data. The repository ignores `data/`,
+so local artifacts can be shared between branches or worktrees without
+committing or downloading them again.
+
+## Scenario results dashboard
+
+A standalone Estonian HTML/JS dashboard for viewing the completed Notebook 10
+scenario results. Generate its data from existing local outputs, without
+downloading data or running the optimisation again:
+
+```powershell
+.\.venv\Scripts\python.exe visualizer\scenario_results\export_dashboard_data.py
+```
+
+Then serve or upload the complete `visualizer/scenario_results/` directory,
+including `data/scenario-results.json`. See
+[`visualizer/scenario_results/README.md`](visualizer/scenario_results/README.md)
+for the upload structure and interpretation notes.
 
 ## Project structure
 
@@ -85,13 +177,20 @@ Features:
 │   ├── 01.4_process_soil_map.ipynb     # Real peat coverage from Mullakaart SHP
 │   ├── 02_simulator_and_baselines.ipynb # Derive features + test baselines
 │   ├── 03_neuroevolution.ipynb          # NSGA-II evolution
+│   ├── nsga2.ipynb                       # Optional from-scratch NSGA-II exploration
 │   ├── 04_learned_carbon_predictor.ipynb # UNFCCC data + NIR vs flat comparison
 │   ├── 05_compare_carbon_models.ipynb   # Evolution: flat vs NIR Pareto fronts
 │   ├── 06_download_forest_registry.ipynb # Download WFS compartment geometries
 │   ├── 07_fetch_forest_details.ipynb    # Fetch detailed attributes (parallel)
 │   ├── 08_train_carbon_predictor.ipynb  # Train GBR from real forest data
 │   ├── 09_spatial_join_and_model.ipynb  # Full pipeline: join + evolve + compare
-│   └── 10_scenario_comparison.ipynb     # 5 policy scenarios side-by-side
+│   ├── 10_scenario_comparison.ipynb     # 6 policy scenarios side-by-side
+│   ├── 10.1_fast_scenario_reproduction.ipynb # Historical seed-42 reproduction gate
+│   ├── 11.1_stochastic_baseline.ipynb   # Optimizer-seed noise baseline
+│   ├── 11.2_one_at_a_time.ipynb         # One-at-a-time parameter screening
+│   ├── 11.3_global_sensitivity.ipynb    # Simultaneous global sensitivity
+│   ├── 11.4_parameter_interactions.ipynb # Selected two-parameter interactions
+│   └── 11.5_biodiversity_robustness.ipynb # Biodiversity-assumption robustness
 ├── src/
 │   ├── estonia_landuse/                 # Main package
 │   │   ├── data/                        # Loading, constants
@@ -210,8 +309,12 @@ Uses real compartment-level data from the Estonian Forest Registry (metsaregiste
 
 1. **Download geometries** via public WFS at `gsavalik.envir.ee/geoserver/mr_portaal/wfs` (CC-BY 4.0)
 2. **Fetch detailed attributes** via REST API at `register.metsad.ee/portaal/api/rest/eraldis/detail/{id}`
-3. **Spatial join** compartment features to the 1km grid (area-weighted)
-4. **Train GBR** to predict tCO2/ha/yr from (species, age, site class, drainage, height)
+3. **Train GBR** to predict tCO2/ha/yr from species, age, site class, drainage, and height
+4. **Predict each forest compartment** before spatial aggregation
+5. **Overlay and area-weight** compartment predictions onto the 500 m grid
+
+Steps 1 and 2 are guarded by `ALLOW_DOWNLOADS = False` and reuse existing
+local files by default.
 
 ### Conversion formula
 
@@ -256,17 +359,79 @@ The NIR model dominates the flat model in cross-evaluation:
 
 ## Policy Scenario Comparison (Notebook 10)
 
-Five scenarios explore how different policy priorities shape trade-offs:
+Six scenarios explore how hard policy limits and selection priorities shape
+trade-offs:
 
-| Scenario | Key difference |
-|----------|---------------|
-| **Green Maximum** | Low agriculture protection, high carbon/bio weights — max ecological gain |
-| **Food Security** | High agriculture preservation (max 5% loss), expensive to convert farmland |
-| **Low Budget** | Max 10% land change, high intervention cost — what's achievable cheaply? |
-| **Wetland Priority** | Lower suitability threshold, higher biodiversity value for wetland |
-| **Balanced** | Default constraints — middle ground |
+| Scenario | Maximum changed land | Maximum agriculture loss | Maximum agriculture gain (net/gross) | Representative |
+|----------|---------------------:|-------------------------:|-------------------------:|----------------|
+| **Green Maximum** | 40% | 50% | No scenario cap | Highest normalized biodiversity + carbon |
+| **Food Security** | 15% | 3% | No scenario cap | Highest biodiversity among feasible policies |
+| **Low Budget** | 6% | 15% | No scenario cap | Normalized biodiversity/carbon/cost knee |
+| **Wetland Priority** | 25% | 15% | 5% / 15% | Normalized biodiversity/carbon/cost/wetland knee |
+| **Sustainable Agriculture Expansion** | 15% | 2% gross | 5–10% net | Normalized agriculture/biodiversity/carbon/cost knee |
+| **Balanced** | 20% | 15% | No scenario cap | Normalized biodiversity/carbon/cost/change knee |
 
-All scenarios use the learned carbon model and pre-computed GBR predictions.
+All scenarios use the learned carbon model and prepared grid-cell predictions.
+Changed-land and agriculture-loss excess are hard feasibility violations.
+Wetland Priority replaces changed-land minimization with wetland-gain
+maximization as the fourth objective, caps net agriculture expansion at 5%
+and gross expansion at 15%, and prices gross agriculture expansion. Other
+existing scenarios minimize changed land. Sustainable Agriculture Expansion
+instead maximizes net agriculture gain, requires 5–10% expansion, caps gross
+agriculture loss at 2%, and limits biodiversity and carbon loss to 1% each.
+
+Notebook 10 selects one representative per scenario and reuses that exact
+policy in the summary, plots, and saved GeoPackages. A dedicated wetland-gain
+figure shows rewetting that the dominant-action map can hide. See
+[docs/scenario-comparison.md](docs/scenario-comparison.md) for prerequisites,
+outputs, and interpretation guidance.
+
+## Historical-model sensitivity analysis (Notebooks 10.1–11.5)
+
+The sensitivity workflow tests whether Notebook 10's selected policies and
+reported outcomes remain stable when optimizer randomness or declared model
+assumptions change. It uses the same historical trainer and scenario rules as
+Notebook 10, wrapped in a resumable manifest runner. Run the notebooks in this
+order:
+
+| Notebook | Question answered |
+|----------|-------------------|
+| **10.1 Fast scenario reproduction** | Can the preserved runner reproduce all six historical Notebook 10 results with the published seed, 42? |
+| **11.1 Stochastic baseline** | How much variation is caused by optimizer seeds while scenario defaults stay fixed? |
+| **11.2 One-at-a-time (OAT)** | Which individual parameters have effects larger than baseline seed noise, and are their responses nonlinear? |
+| **11.3 Global sensitivity** | Which parameters matter when all sampled parameters vary simultaneously? |
+| **11.4 Parameter interactions** | Do selected parameter pairs have non-additive effects? |
+| **11.5 Biodiversity robustness** | Do alternative dimensionless biodiversity-value assumptions change outcomes, rankings, or spatial recommendations? |
+
+Notebook 10.1 is the scientific gate: only a `full` seed-42 run is compared
+with the saved Notebook 10 summary and allowed to pass reproduction. Run
+Notebook 11.1 next because its seed-to-seed variation is the noise reference
+used when interpreting OAT, global, interaction, and biodiversity effects.
+
+Choose the compute profile and worker count before starting Jupyter:
+
+```powershell
+$env:SENSITIVITY_PROFILE = "screen"
+$env:SENSITIVITY_N_WORKERS = "2"
+uv run jupyter lab
+```
+
+- `test` uses a tiny deterministic context as an executable smoke test.
+- `screen` uses real inputs with a reduced optimizer budget for exploratory runs.
+- `full` uses the historical scientific budget; use it for reproduction and final conclusions.
+
+Outputs default to `data/processed/legacy_sensitivity/`. Valid completed
+artifact pairs are reused when a notebook is rerun; set
+`SENSITIVITY_OVERWRITE=true` only when intentional recomputation is required.
+Increase `SENSITIVITY_N_WORKERS` gradually because each process holds its own
+data and optimizer state.
+
+These experiments measure sensitivity of the historical model and optimizer
+within the tested parameter ranges. They do **not** estimate empirical
+ecological uncertainty or prove that a recommendation is ecologically
+correct. See the
+[legacy optimizer sensitivity design](docs/superpowers/specs/2026-08-04-legacy-optimizer-sensitivity-design.md)
+for the detailed experiment and artifact contract.
 
 ## Grid Resolution
 

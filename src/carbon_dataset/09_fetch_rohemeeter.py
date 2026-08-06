@@ -3,81 +3,102 @@
 Usage:
     uv run python src/carbon_dataset/09_fetch_rohemeeter.py [--delay 1.5] [--batch 100]
 
-Queries every 200m point within 1km grid cells. Saves progress to JSON,
-safe to interrupt (Ctrl+C) and resume.
+Queries interior points derived from the configured grid geometry. Saves
+progress to JSON, safe to interrupt (Ctrl+C) and resume.
 """
 
 import argparse
 import json
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from estonia_landuse.data.constants import GRID_CELL_SIZE
 
 # --- Paths ---
-CARBON_DIR = Path("data/processed/carbon_v1_5")
-OUTPUT_RAW = CARBON_DIR / "rohemeeter_scores_raw.parquet"
-OUTPUT_AGG = CARBON_DIR / "rohemeeter_scores.parquet"
-PROGRESS_PATH = CARBON_DIR / "rohemeeter_progress.json"
-GRID_PATH = CARBON_DIR / "grid.gpkg"
+
+
+@dataclass(frozen=True)
+class RohemeeterPaths:
+    """Input and output paths for one resumable Rohemeeter refresh."""
+
+    grid: Path
+    progress: Path
+    raw: Path
+    aggregate: Path
+
+
+DEFAULT_OUTPUT_DIR = Path("data/processed/rohemeeter_500m")
+DEFAULT_PATHS = RohemeeterPaths(
+    grid=Path("data/processed/v1/base_grid.gpkg"),
+    progress=DEFAULT_OUTPUT_DIR / "rohemeeter_progress.json",
+    raw=DEFAULT_OUTPUT_DIR / "rohemeeter_scores_raw.parquet",
+    aggregate=DEFAULT_OUTPUT_DIR / "rohemeeter_scores.parquet",
+)
+
+
+def build_paths(grid_path: Path, output_dir: Path) -> RohemeeterPaths:
+    """Build an isolated path set without overwriting historical outputs."""
+    return RohemeeterPaths(
+        grid=grid_path,
+        progress=output_dir / "rohemeeter_progress.json",
+        raw=output_dir / "rohemeeter_scores_raw.parquet",
+        aggregate=output_dir / "rohemeeter_scores.parquet",
+    )
+
 
 ROHEMEETER_URL = "https://shiny.botany.ut.ee/rohemeeter/"
 
-# Query grid: 200m step (5x5 = 25 points per 1km cell)
+# Query points are spaced 200 m apart and offset 100 m from cell edges.
 SUBCELL_STEP = 200
 SUBCELL_OFFSET = 100
 MAX_RETRIES = 3
 TIMEOUT_MS = 15000
 
 
-def _save_progress(results):
+def _save_progress(results, progress_path: Path):
     """Save progress atomically (write to temp, then rename)."""
-    import tempfile
-    PROGRESS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = PROGRESS_PATH.with_suffix(".tmp")
+    progress_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = progress_path.with_suffix(".tmp")
     with open(tmp_path, "w") as f:
         json.dump(results, f)
     # Atomic rename (won't corrupt on crash)
-    tmp_path.replace(PROGRESS_PATH)
+    tmp_path.replace(progress_path)
 
 
-def generate_query_points(grid):
-    """Generate all query points (200m spacing within each 1km cell).
-    
-    Skips cells that are mostly water (water_pct > 0.5) to avoid
-    wasting queries on sea/lake cells that won't return data.
-    """
-    import pandas as pd
-
-    # Load V1 features to get water_pct
-    features_path = Path("data/processed/v1/features_v1.parquet")
-    if features_path.exists():
-        features = pd.read_parquet(features_path, columns=["cell_id", "water_pct"])
-        water_cells = set(features.loc[features["water_pct"] > 0.5, "cell_id"].tolist())
-        print(f"Skipping {len(water_cells)} water-dominated cells", flush=True)
-    else:
-        water_cells = set()
-
+def generate_query_points(
+    grid,
+    *,
+    water_cells: set[int],
+    step: int = SUBCELL_STEP,
+    offset: int = SUBCELL_OFFSET,
+):
+    """Generate geometry-derived interior query points for non-water cells."""
     points = []
-    n_per_side = 1000 // SUBCELL_STEP
     skipped = 0
     for idx, row in grid.iterrows():
-        cell_id = row["cell_id"] if "cell_id" in grid.columns else idx
-        if int(cell_id) in water_cells:
+        cell_id = int(row["cell_id"] if "cell_id" in grid.columns else idx)
+        if cell_id in water_cells:
             skipped += 1
             continue
-        minx, miny, _, _ = row.geometry.bounds
-        for xi in range(n_per_side):
-            for yi in range(n_per_side):
-                x = minx + SUBCELL_OFFSET + xi * SUBCELL_STEP
-                y = miny + SUBCELL_OFFSET + yi * SUBCELL_STEP
-                point_key = f"{int(cell_id)}_{xi}_{yi}"
-                points.append((point_key, int(cell_id), x, y))
+        minx, miny, maxx, maxy = row.geometry.bounds
+        xs = np.arange(minx + offset, maxx, step)
+        ys = np.arange(miny + offset, maxy, step)
+        for xi, x in enumerate(xs):
+            for yi, y in enumerate(ys):
+                points.append(
+                    (f"{cell_id}_{xi}_{yi}", cell_id, float(x), float(y))
+                )
 
-    print(f"Skipped {skipped} water cells, querying {len(points)} points", flush=True)
+    print(
+        f"Grid cell size: {GRID_CELL_SIZE}m; skipped {skipped} water cells; "
+        f"querying {len(points)} points",
+        flush=True,
+    )
     return points
 
 
@@ -126,18 +147,31 @@ def fetch_score(page, x, y):
     return None
 
 
-def run_fetch(delay=1.5, batch_size=100):
+def run_fetch(paths: RohemeeterPaths, delay=1.5, batch_size=100):
     """Main fetch loop."""
     from playwright.sync_api import sync_playwright
 
-    grid = gpd.read_file(GRID_PATH)
-    query_points = generate_query_points(grid)
+    grid = gpd.read_file(paths.grid)
+    features_path = Path("data/processed/v1/features_v1.parquet")
+    if features_path.exists():
+        features = pd.read_parquet(
+            features_path,
+            columns=["cell_id", "water_pct"],
+        )
+        water_cells = set(
+            features.loc[features["water_pct"] > 0.5, "cell_id"]
+            .astype(int)
+            .tolist()
+        )
+    else:
+        water_cells = set()
+    query_points = generate_query_points(grid, water_cells=water_cells)
     total = len(query_points)
 
     # Load progress
     results = {}
-    if PROGRESS_PATH.exists():
-        with open(PROGRESS_PATH) as f:
+    if paths.progress.exists():
+        with open(paths.progress) as f:
             results = json.load(f)
 
     remaining = [p for p in query_points if p[0] not in results]
@@ -156,7 +190,7 @@ def run_fetch(delay=1.5, batch_size=100):
         try:
             for point_key, cell_id, x, y in remaining:
                 result = None
-                for attempt in range(MAX_RETRIES):
+                for _attempt in range(MAX_RETRIES):
                     result = fetch_score(page, x, y)
                     if result is not None:
                         break
@@ -183,7 +217,7 @@ def run_fetch(delay=1.5, batch_size=100):
                           f"valid: {n_valid} | ETA: {eta_h:.1f}h", flush=True)
 
                 if fetched % batch_size == 0 or fetched == 10 or fetched % 25 == 0:
-                    _save_progress(results)
+                    _save_progress(results, paths.progress)
                     print(f"  [saved {len(results)} points]", flush=True)
 
                 time.sleep(delay)
@@ -192,19 +226,19 @@ def run_fetch(delay=1.5, batch_size=100):
             print(f"\nInterrupted after {fetched} queries.", flush=True)
         finally:
             browser.close()
-            _save_progress(results)
+            _save_progress(results, paths.progress)
             print(f"Saved progress: {len(results)} points", flush=True)
 
     return results
 
 
-def export_parquet():
+def export_parquet(paths: RohemeeterPaths):
     """Convert progress JSON to parquet files."""
-    if not PROGRESS_PATH.exists():
+    if not paths.progress.exists():
         print("No progress file found.")
         return
 
-    with open(PROGRESS_PATH) as f:
+    with open(paths.progress) as f:
         results = json.load(f)
 
     rows = []
@@ -219,10 +253,11 @@ def export_parquet():
         rows.append(row)
 
     df_raw = pd.DataFrame(rows)
-    df_raw.to_parquet(OUTPUT_RAW, index=False)
-    print(f"Saved raw: {OUTPUT_RAW} ({len(df_raw)} points)")
+    paths.raw.parent.mkdir(parents=True, exist_ok=True)
+    df_raw.to_parquet(paths.raw, index=False)
+    print(f"Saved raw: {paths.raw} ({len(df_raw)} points)")
 
-    # Aggregate per 1km cell
+    # Aggregate per source grid cell.
     if "rohemeeter_score" in df_raw.columns:
         agg = df_raw.groupby("cell_id")["rohemeeter_score"].agg(
             rohemeeter_mean="mean",
@@ -237,8 +272,8 @@ def export_parquet():
         ).reset_index(name="rohemeeter_valid_count")
         agg = agg.merge(valid_counts, on="cell_id")
 
-        agg.to_parquet(OUTPUT_AGG, index=False)
-        print(f"Saved aggregated: {OUTPUT_AGG} ({len(agg)} cells)")
+        agg.to_parquet(paths.aggregate, index=False)
+        print(f"Saved aggregated: {paths.aggregate} ({len(agg)} cells)")
 
         valid = agg["rohemeeter_mean"].dropna()
         if len(valid) > 0:
@@ -250,10 +285,23 @@ if __name__ == "__main__":
     parser.add_argument("--delay", type=float, default=1.5, help="Seconds between requests")
     parser.add_argument("--batch", type=int, default=100, help="Save every N queries")
     parser.add_argument("--export-only", action="store_true", help="Just export existing progress to parquet")
+    parser.add_argument(
+        "--grid-path",
+        type=Path,
+        default=DEFAULT_PATHS.grid,
+        help="Input grid GeoPackage (default: 500 m v1 grid)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+        help="Directory for resumable progress and parquet outputs",
+    )
     args = parser.parse_args()
+    paths = build_paths(args.grid_path, args.output_dir)
 
     if args.export_only:
-        export_parquet()
+        export_parquet(paths)
     else:
-        run_fetch(delay=args.delay, batch_size=args.batch)
-        export_parquet()
+        run_fetch(paths, delay=args.delay, batch_size=args.batch)
+        export_parquet(paths)

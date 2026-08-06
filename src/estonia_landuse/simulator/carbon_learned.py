@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from .carbon_nir import CELL_AREA_HA, NIR_TRANSITION_FACTORS
+from .targets import normalize_targets
 
 
 def score_carbon_learned(context: pd.DataFrame,
@@ -29,14 +30,7 @@ def score_carbon_learned(context: pd.DataFrame,
     # Current fractions
     current = np.column_stack([context[f"{g}_pct"].values for g in groups])
 
-    # Normalize targets
-    urban = context["urban_pct"].values if "urban_pct" in context.columns else np.zeros(n)
-    water = context["water_pct"].values if "water_pct" in context.columns else np.zeros(n)
-    available_land = np.clip(1.0 - urban - water, 0, 1)
-
-    target_sum = target_fractions.sum(axis=1, keepdims=True)
-    target_sum = np.where(target_sum > 0, target_sum, 1.0)
-    targets = target_fractions / target_sum * available_land[:, None]
+    targets = normalize_targets(context, target_fractions)
 
     delta = targets - current
 

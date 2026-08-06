@@ -17,6 +17,7 @@ outputs/
 
 # Visualizer generated data
 visualizer/*.geojson
+visualizer/scenario_results/data/
 
 # IDE
 .vscode/

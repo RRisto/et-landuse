@@ -50,6 +50,7 @@ def default_config() -> dict:
             "connectivity_bonus": 0.2,
             "base_change_cost": 0.3,
             "agriculture_loss_cost": 2.0,        # heavy cost for losing farmland (food security)
+            "agriculture_gain_cost": 0.3,        # moderate extra cost for expanding farmland
             "max_agriculture_loss_pct": 0.3,     # can't lose more than 30% of a cell's agriculture
         },
 
@@ -74,5 +75,11 @@ def default_config() -> dict:
         "budget_penalty_weight": 10.0,
         # Food security: max 15% total agriculture loss county-wide
         "max_total_agri_loss_pct": 0.15,
+        "min_total_agri_gain_pct": 0.0,
+        "max_total_agri_gain_pct": 1.0,
+        "max_gross_agri_loss_pct": 1.0,
+        "max_gross_agri_gain_pct": 1.0,
+        "min_biodiversity_gain": -1.0,
+        "min_carbon_gain": -1.0,
         "total_agri_loss_penalty_weight": 20.0,
     }

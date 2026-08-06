@@ -12,13 +12,10 @@ Outputs: data/processed/carbon_v1_5/carbon_scores.parquet
 
 import numpy as np
 import pandas as pd
-
 from config import (
     CARBON_STOCK_WEIGHTS_FULL,
     CARBON_STOCK_WEIGHTS_NO_SOIL,
     DATA_PROCESSED_CARBON,
-    NORM_LOWER_PERCENTILE,
-    NORM_UPPER_PERCENTILE,
 )
 
 

@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 _ROOT = Path(__file__).parents[2]
 _APP = (_ROOT / "visualizer" / "app.js").read_text(encoding="utf-8")
 _HTML = (_ROOT / "visualizer" / "index.html").read_text(encoding="utf-8")

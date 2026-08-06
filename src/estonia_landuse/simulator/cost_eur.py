@@ -27,6 +27,7 @@ Actual costs depend on site conditions, scale, labor market, subsidies.
 import numpy as np
 import pandas as pd
 
+from .targets import normalize_targets
 
 # --- Implementation costs: EUR/ha (one-time) (low, mid, high) ---
 IMPLEMENTATION_COST = {
@@ -101,14 +102,7 @@ def estimate_cost_eur(context: pd.DataFrame,
     # Current fractions
     current = np.column_stack([context[f"{g}_pct"].values for g in groups])
 
-    # Normalize targets
-    urban = context["urban_pct"].values
-    water = context["water_pct"].values
-    available_land = np.clip(1.0 - urban - water, 0, 1)
-
-    target_sum = target_fractions.sum(axis=1, keepdims=True)
-    target_sum = np.where(target_sum > 0, target_sum, 1.0)
-    targets = target_fractions / target_sum * available_land[:, None]
+    targets = normalize_targets(context, target_fractions)
 
     delta = targets - current
 
