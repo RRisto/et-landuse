@@ -121,6 +121,20 @@ Use `estonia_landuse.scenarios.annotate_feasibility` and
 preparing scenario reports. The same selected policy must be reused for the
 summary and all maps so they describe one consistent representative.
 
+## NSGA-II exploration notebook
+
+[`notebooks/nsga2.ipynb`](notebooks/nsga2.ipynb) is an optional learning
+notebook for understanding NSGA-II from first principles. Based on Deb et
+al.'s NSGA-II paper, it works through Pareto dominance, nondominated fronts,
+fast nondominated sorting, normalized crowding distance, crowded comparison,
+tournament selection, crossover, mutation, elitist parent-offspring
+replacement, and constrained dominance.
+
+The notebook is exploratory and is not a required step in the numbered
+land-use pipeline. Its from-scratch examples are intended to explain the
+algorithm; the project implementation used by the land-use experiments lives
+under [`src/estonia_landuse/optimizer/`](src/estonia_landuse/optimizer/).
+
 ### Reusing local Rohemeeter data
 
 Rohemeeter collection is expensive and can take a long time. Notebook
@@ -154,6 +168,7 @@ for the upload structure and interpretation notes.
 │   ├── 01.4_process_soil_map.ipynb     # Real peat coverage from Mullakaart SHP
 │   ├── 02_simulator_and_baselines.ipynb # Derive features + test baselines
 │   ├── 03_neuroevolution.ipynb          # NSGA-II evolution
+│   ├── nsga2.ipynb                       # Optional from-scratch NSGA-II exploration
 │   ├── 04_learned_carbon_predictor.ipynb # UNFCCC data + NIR vs flat comparison
 │   ├── 05_compare_carbon_models.ipynb   # Evolution: flat vs NIR Pareto fronts
 │   ├── 06_download_forest_registry.ipynb # Download WFS compartment geometries
