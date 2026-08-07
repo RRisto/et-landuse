@@ -25,6 +25,11 @@ SCENARIO_IDS = (
 )
 
 
+def _normalized_file_sha256(path: Path) -> str:
+    content = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(content).hexdigest().upper()
+
+
 def _notebook_scenarios() -> tuple[dict[str, dict], dict[str, str], dict[str, str]]:
     notebook = json.loads(NOTEBOOK_10.read_text(encoding="utf-8"))
     definition_cell = next(
@@ -44,10 +49,19 @@ def _notebook_scenarios() -> tuple[dict[str, dict], dict[str, str], dict[str, st
     )
 
 
+def test_reference_hash_ignores_platform_line_endings(tmp_path: Path) -> None:
+    lf_path = tmp_path / "lf.ipynb"
+    crlf_path = tmp_path / "crlf.ipynb"
+    lf_path.write_bytes(b'{\n  "cells": []\n}\n')
+    crlf_path.write_bytes(b'{\r\n  "cells": []\r\n}\r\n')
+
+    assert _normalized_file_sha256(lf_path) == _normalized_file_sha256(crlf_path)
+
+
 def test_notebook_10_reference_hash_is_unchanged() -> None:
     """Catch an edit to the scientific reference artifact."""
-    digest = hashlib.sha256(NOTEBOOK_10.read_bytes()).hexdigest().upper()
-    assert digest == "89DD52DC8376F330728AB3A186423FFAF5B04AE15A14FD91CED1E45C21EF9D45"
+    digest = _normalized_file_sha256(NOTEBOOK_10)
+    assert digest == "6207136B9239BCF2E702611C2855B5691896A2299DD7CBC87947DDB2FF2FB827"
 
 
 def test_historical_configurations_match_notebook_10() -> None:
