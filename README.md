@@ -154,6 +154,25 @@ environment.
 The notebook numbers record the project's stages, but they are not one mandatory run-everything
 sequence. Choose the route that matches the question.
 
+| Notebook | Purpose and principal role | Workflow status |
+|---|---|---|
+| [`01_collect_datasets.ipynb`](notebooks/01_collect_datasets.ipynb) | Builds the current 500 m Lääne County base grid and V1 spatial feature table. | Operational preparation; run when the base grid or source features need rebuilding. |
+| [`01.1_carbon_dataset.ipynb`](notebooks/01.1_carbon_dataset.ipynb) | Reproduces the historical 1 km/V1.5 carbon-relevance dataset. | Legacy exploration only; do not overwrite the current processed data with its outputs. |
+| [`01.2_fetch_rohemeeter.ipynb`](notebooks/01.2_fetch_rohemeeter.ipynb) | Fetches resumable Rohemeeter biodiversity samples and aggregates them under `data/processed/rohemeeter_500m/`. | Specialized optional preparation. Notebook 03.2 currently looks instead under `data/processed/carbon_v1_5/`, so the two paths must be aligned explicitly rather than treated as plug-and-play. |
+| [`01.3_validate_features_map.ipynb`](notebooks/01.3_validate_features_map.ipynb) | Maps V1 and optional V1.5 features for visual sanity checks without saving new data. | Legacy validation view. |
+| [`01.4_process_soil_map.ipynb`](notebooks/01.4_process_soil_map.ipynb) | Derives real peat fractions from a manually supplied Estonian soil map and can update the forest-feature table. | Operational preparation when soil-map enrichment is required. |
+| [`02_simulator_and_baselines.ipynb`](notebooks/02_simulator_and_baselines.ipynb) | Derives simulator features, evaluates named baseline policies, and saves enhanced V1 feature files. | Operational preparation plus model-behaviour validation for the earlier experiment inputs. |
+| [`03_neuroevolution.ipynb`](notebooks/03_neuroevolution.ipynb) | Runs seeded NSGA-II on the base grid, optionally merged with V1.5 data, and visualizes Pareto policies. | Optional experiment; not a Notebook 10 prerequisite. |
+| [`03.1_neuroevolution_carbon.ipynb`](notebooks/03.1_neuroevolution_carbon.ipynb) | Currently byte-identical to Notebook 03, with the same seeded NSGA-II exploration and no distinct carbon artifact. | Optional duplicate experiment; not a separate route or Notebook 10 prerequisite. |
+| [`03.2_neuroevolution_biodiversity.ipynb`](notebooks/03.2_neuroevolution_biodiversity.ipynb) | Runs a Rohemeeter-informed NSGA-II variant, with a neutral fallback when its expected score file is absent, and can save policy artifacts. | Optional biodiversity experiment; not a Notebook 10 prerequisite. |
+| [`04_learned_carbon_predictor.ipynb`](notebooks/04_learned_carbon_predictor.ipynb) | Compares a hand-coded NIR-calibrated route and a gradient-boosted approximation with the existing carbon lookup, saving comparison artifacts. | Optional carbon-model experiment; not the operational forest-carbon route. |
+| [`05_compare_carbon_models.ipynb`](notebooks/05_compare_carbon_models.ipynb) | Runs flat and NIR NSGA-II configurations, cross-evaluates their Pareto fronts, and saves comparison metrics. | Optional comparison experiment; not a Notebook 10 prerequisite. |
+
+For input rebuilds, use Notebook 01 and, when their specific data is needed, 01.2 and 01.4;
+Notebook 02 prepares derived features while validating baseline behaviour. Notebook 01.3 is a
+legacy validation view, Notebook 01.1 preserves the historical carbon route, and Notebooks 03–05
+are optional experiments rather than steps in the current scenario workflow.
+
 ### 1. Current six-scenario workflow
 
 [`notebooks/10_scenario_comparison.ipynb`](notebooks/10_scenario_comparison.ipynb) is the current
@@ -182,13 +201,7 @@ notebooks default to `ALLOW_DOWNLOADS = False`: `01_collect_datasets`, `01.2_fet
 `04_learned_carbon_predictor`, `06_download_forest_registry`, and
 `07_fetch_forest_details`. Change the guard only for an intentional source refresh.
 
-### 2. Optional development and comparison experiments
-
-Notebooks `03`, `03.1`, and `03.2` explore neuroevolution variants; Notebooks `04` and `05`
-develop and compare carbon-model routes. They are comparative/development experiments, not
-prerequisites to a Notebook 10 run when the prepared Notebook 09 output already exists.
-
-### 3. Historical-model reproduction and sensitivity
+### 2. Historical-model reproduction and sensitivity
 
 This separate route evaluates the preserved historical Notebook 10 model and optimizer within
 declared parameter ranges. Run it in order because the seed baseline informs later comparisons:
@@ -216,7 +229,7 @@ seeds are `0` for `test` and `42, 73, 101` for `screen` and `full`. Outputs defa
 `data/processed/legacy_sensitivity/` and valid completed artifacts are reused. These experiments
 measure model and optimizer sensitivity; they do not estimate empirical ecological uncertainty.
 
-### 4. NSGA-II learning notebook
+### 3. NSGA-II learning notebook
 
 [`notebooks/nsga2.ipynb`](notebooks/nsga2.ipynb) is a self-contained educational exploration of
 NSGA-II mechanics. Use it to study the algorithm rather than as part of the numbered land-use
